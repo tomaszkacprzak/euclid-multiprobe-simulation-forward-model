@@ -60,7 +60,7 @@ def resources(args):
             "main_n_cores": 8,
             "main_memory": 1952,
             "main_scratch": 0,
-            "merge_time": 8,
+            "merge_time": 16,
             "merge_n_cores": 32,
             "merge_memory": 1952,
             "merge_scratch": 0,
@@ -603,7 +603,6 @@ def _get_clustering_transform(conf, pixel_file):
             qdg,
             tomo_qdg,
             # misc
-            data_vec_pix=pixel_file[0],
             systematics_map=tomo_maglim_sys_dv,
             mask=maglim_mask,
         )

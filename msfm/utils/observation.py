@@ -87,6 +87,8 @@ def forward_model_observation_map(
             2,
         ), f"Expected shape {(n_pix, n_z_metacal, 2)}, got {wl_gamma_map.shape}"
 
+        LOGGER.info(f"Forward modeling the weak lensing map")
+
         wl_gamma_map *= masks_metacal[:, :, np.newaxis]
 
         # the input to the mode removal must always be in RING ordering
@@ -134,6 +136,8 @@ def forward_model_observation_map(
             n_pix,
             n_z_maglim,
         ), f"Expected shape {(n_pix, n_z_maglim)}, got {gc_count_map.shape}"
+
+        LOGGER.info(f"Forward modeling the galaxy clustering map")
 
         gc_count_map *= masks_maglim
 

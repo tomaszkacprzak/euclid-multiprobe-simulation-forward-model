@@ -1,4 +1,4 @@
-import h5py
+import os, h5py
 import numpy as np
 import healpy as hp
 
@@ -47,8 +47,23 @@ def survey_angles_to_pix(conf, ra, dec, n_side):
     return pix
 
 
-def build_metacal_map_from_cat(conf, debug=True):
+def build_metacal_map_from_cat(conf, debug=True, force_recompute=False):
     conf = files.load_config(conf)
+
+    file_dir = os.path.dirname(__file__)
+    repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
+    gamma_cache_dir = f"{repo_dir}/data/metacal_wl_gamma_map.npy"
+    count_cache_dir = f"{repo_dir}/data/metacal_wl_count_map.npy"
+
+    # load from cache if available and not forcing recompute
+    if not force_recompute:
+        try:
+            wl_gamma_map = np.load(gamma_cache_dir)
+            wl_count_map = np.load(count_cache_dir)
+            LOGGER.info("Loaded metacal maps from cache")
+            return wl_gamma_map, wl_count_map
+        except FileNotFoundError:
+            LOGGER.info("Cache not found, computing metacal maps")
 
     n_side = conf["analysis"]["n_side"]
     n_pix = conf["analysis"]["n_pix"]
@@ -141,11 +156,28 @@ def build_metacal_map_from_cat(conf, debug=True):
     metacal.close()
     dnf.close()
 
+    np.save(gamma_cache_dir, wl_gamma_map)
+    np.save(count_cache_dir, wl_count_map)
+    LOGGER.info(f"Saved metacal maps to {gamma_cache_dir} and {count_cache_dir}")
+
     return wl_gamma_map, wl_count_map
 
 
-def build_maglim_map_from_cat(conf, debug=True):
+def build_maglim_map_from_cat(conf, debug=True, force_recompute=False):
     conf = files.load_config(conf)
+
+    file_dir = os.path.dirname(__file__)
+    repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
+    cache_dir = f"{repo_dir}/data/maglim_gc_count_map.npy"
+
+    # load from cache if available and not forcing recompute
+    if not force_recompute:
+        try:
+            gc_count_map = np.load(cache_dir)
+            LOGGER.info("Loaded maglim map from cache")
+            return gc_count_map
+        except FileNotFoundError:
+            LOGGER.info("Cache not found, computing maglim map")
 
     n_side = conf["analysis"]["n_side"]
     n_pix = conf["analysis"]["n_pix"]
@@ -190,6 +222,10 @@ def build_maglim_map_from_cat(conf, debug=True):
     index.close()
     dnf.close()
     maglim.close()
+
+    # save to cache
+    np.save(cache_dir, gc_count_map)
+    LOGGER.info(f"Saved maglim map to {cache_dir}")
 
     return gc_count_map
 
