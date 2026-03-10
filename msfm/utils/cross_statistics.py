@@ -35,9 +35,6 @@ def get_cross_bin_indices(
         with_cross_probe = with_lensing and with_clustering
 
     assert not (
-        with_cross_probe and (not with_lensing or not with_clustering)
-    ), f"Cross probe correlations are only allowed if both lensing and clustering are considered."
-    assert not (
         with_cross_probe and not with_cross_z
     ), f"Cross probe correlations are only allowed if cross z correlations are considered."
 
@@ -45,7 +42,7 @@ def get_cross_bin_indices(
     index = 0
     lensing_indices = []
     clustering_indices = []
-    combined_indices = []
+    cross_indices = []
     names = []
     for i in range(n_z_lensing + n_z_clustering):
         for j in range(n_z_lensing + n_z_clustering):
@@ -67,8 +64,8 @@ def get_cross_bin_indices(
                         clustering_indices.append(index)
 
                 # cross probe
-                elif with_cross_probe and with_lensing and with_clustering:
-                    combined_indices.append(index)
+                elif with_cross_probe:
+                    cross_indices.append(index)
 
                 index += 1
 
@@ -79,7 +76,7 @@ def get_cross_bin_indices(
     if with_clustering:
         total_indices += clustering_indices
     if with_cross_probe:
-        total_indices += combined_indices
+        total_indices += cross_indices
 
     total_indices = np.array(sorted(total_indices))
     names = np.array(names)[total_indices]
