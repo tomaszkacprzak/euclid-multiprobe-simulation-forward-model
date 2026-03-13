@@ -85,14 +85,47 @@ class GridPipeline(MSFMpipeline):
         # used to reshape the stored tensors, and for nothing else
         self.n_all_params = len(self.all_params)
 
-        # for the power spectra
-        self.n_noise = self.conf["analysis"]["grid"]["n_noise_per_example"]
+        self.n_noise = self.conf["analysis"]["grid"]["n_noise_per_signal"]
+        self.n_signal = self.conf["analysis"]["n_patches"] * self.conf["analysis"]["grid"]["n_perms_per_cosmo"]
+
+    def _parse_indices(
+        self, indices: Union[int, float, list, range], name: str, fallback_length: int, is_eval: bool = False
+    ) -> list:
+        if indices is None:
+            parsed_indices = list(range(fallback_length))
+            LOGGER.info(f"Including all {len(parsed_indices)} {name} = {parsed_indices}")
+            return parsed_indices
+        if isinstance(indices, float):
+            assert 0.0 < indices < 1.0, f"for a float, {name} = {indices} must be between 0 and 1"
+            split_idx = int(indices * fallback_length)
+            if is_eval:
+                parsed_indices = list(range(split_idx, fallback_length))
+                LOGGER.warning(f"Using validation split ({1.0 - indices:<.2%})")
+            else:
+                parsed_indices = list(range(0, split_idx))
+                LOGGER.warning(f"Using training split ({indices:<.2%})")
+        elif isinstance(indices, int):
+            assert indices >= 1, f"for an integer, {name} = {indices} must be >= 1"
+            parsed_indices = list(range(indices))
+        elif isinstance(indices, list):
+            assert len(indices) >= 1, f"{name} = {indices} must be a list of length >= 1"
+            assert all(isinstance(i, int) for i in indices), f"All elements in {name} must be integers"
+            parsed_indices = indices
+        elif isinstance(indices, range):
+            parsed_indices = list(indices)
+        else:
+            raise TypeError(f"{name} = {indices} must be an integer, float, a list of integers or a range")
+
+        LOGGER.info(f"Including {len(parsed_indices)} {name} = {parsed_indices}")
+
+        return parsed_indices
 
     def get_dset(
         self,
         tfr_pattern: str,
         local_batch_size: int,
-        noise_indices: Union[int, list, range] = 1,
+        noise_indices: Union[int, float, list, range] = None,
+        signal_indices: Union[int, float, list, range] = None,
         # performance
         n_readers: int = 8,
         n_workers: int = None,
@@ -114,10 +147,17 @@ class GridPipeline(MSFMpipeline):
             tfr_pattern (str): Glob pattern of the .fiducial tfrecord files.
             local_batch_size (int): Local batch size. Can also be the string "cosmo". Then, every batch contains all of
                 the realisations of exactly one cosmology.
-            noise_indices (int, optional): The noise indices to return. When this is an integer, the value is
-                interpreted as range(noise_indices). Python lists and ranges are also accepted and not modified.
-                Defaults to 1, then only the single noise realization with index 0 is returned.
-            n_readers (int, optional): Number of parallel readers, i.e. different input files read concurrently. This
+            noise_indices (int, float, list, range, optional): The noise indices to return. When this is an integer, the value is
+                interpreted as range(noise_indices). When this is a float between 0 and 1, it is interpreted as the
+                train/vali split ratio along the available noise indices where `is_eval` determines which half is chosen.
+                Python lists and ranges are also accepted and not modified.
+                Defaults to None, then all noise indices are returned.
+            signal_indices (int, float, list, range, optional): The signal indices to return. When this is an integer, the
+                value is interpreted as range(signal_indices). When this is a float between 0 and 1, it is interpreted as the
+                train/vali split ratio along the available signal indices where `is_eval` determines which half is chosen.
+                Python lists and ranges are also accepted and not modified.
+                Defaults to None, then all signal indices are returned.
+            n_readers (int, optional): Number of parallel readers, i_e. different input files read concurrently. This
                 should be roughly less than a tenth of the number of files. Large values cost a lot of RAM, especially
                 in the distributed setting. Defaults to 4.
             n_workers (int, optional): Number of parallel workers for the file reading, file parsing and preprocessing
@@ -147,7 +187,7 @@ class GridPipeline(MSFMpipeline):
             tf.data.Dataset: A deterministic dataset that goes through the grid cosmologies in the order of the sobol
                 seeds. The output is a tuple like (data_vectors, cosmo, index), where data_vectors is a tensor of shape
             (batch_size, n_pix, n_z_metacal + n_z_maglim), cosmo is a label distributed on the Sobol sequence and index
-            is a tuple containing (i_sobol, i_example, i_noise).
+            is a tuple containing (i_sobol, i_signal, i_noise).
         """
 
         if is_eval:
@@ -176,18 +216,9 @@ class GridPipeline(MSFMpipeline):
                 drop_remainder = True
             LOGGER.info(f"drop_remainder is not set, using drop_remainder = {drop_remainder}")
 
-        # noise indexing
-        if isinstance(noise_indices, int):
-            assert noise_indices >= 1, f"for an integer, noise_indices = {noise_indices} must be >= 1"
-            noise_indices = range(noise_indices)
-        elif isinstance(noise_indices, list):
-            assert len(noise_indices) >= 1, f"noise_indices = {noise_indices} must be a list of length >= 1"
-            assert all(isinstance(i, int) for i in noise_indices), "All elements in noise_indices must be integers"
-        elif isinstance(noise_indices, range):
-            pass
-        else:
-            raise TypeError(f"noise_indices = {noise_indices} must be an integer, a list of integers or a range")
-        LOGGER.info(f"Including noise_indices = {list(noise_indices)}")
+        # indexing
+        noise_indices = self._parse_indices(noise_indices, "noise_indices", self.n_noise, is_eval=is_eval)
+        signal_indices = self._parse_indices(signal_indices, "signal_indices", self.n_signal, is_eval=is_eval)
 
         # get the file names and dataset them
         dset = tf.data.Dataset.list_files(tfr_pattern, shuffle=(not is_eval), seed=file_name_shuffle_seed)
@@ -212,8 +243,22 @@ class GridPipeline(MSFMpipeline):
         if local_batch_size == "cosmo":
             assert n_readers == 1, f"Can only read from a single file concurrently when local_batch_size = 'cosmo'"
             assert is_eval, f"The 'cosmo' batching is only for validation"
+
+        if signal_indices is not None:
+
+            def interleave_func(file):
+                return (
+                    tf.data.TFRecordDataset(file)
+                    .enumerate()
+                    .filter(lambda i, ex: tf.reduce_any(tf.equal(i, tf.constant(signal_indices, dtype=tf.int64))))
+                    .map(lambda i, ex: ex)
+                )
+
+        else:
+            interleave_func = tf.data.TFRecordDataset
+
         dset = dset.interleave(
-            tf.data.TFRecordDataset,
+            interleave_func,
             cycle_length=n_readers,
             block_length=1,
             num_parallel_calls=n_file_workers,
@@ -256,9 +301,7 @@ class GridPipeline(MSFMpipeline):
 
         # batch (first, for vectorization)
         if local_batch_size == "cosmo":
-            n_patches = self.conf["analysis"]["n_patches"]
-            n_perms_per_cosmo = self.conf["analysis"]["grid"]["n_perms_per_cosmo"]
-            local_batch_size = n_patches * n_perms_per_cosmo * len(noise_indices)
+            local_batch_size = len(signal_indices) * len(noise_indices)
             LOGGER.info(f"The dset is batched by cosmology")
         dset = dset.batch(local_batch_size, drop_remainder=drop_remainder)
         LOGGER.info(f"Batching into {local_batch_size} elements locally")
@@ -285,7 +328,7 @@ class GridPipeline(MSFMpipeline):
         applied as flat_map or interleave.
 
         Args:
-            data_vectors (dict): Full dictionary containing all noisy kg and dg maps, i_sobol and i_example indices.
+            data_vectors (dict): Full dictionary containing all noisy kg and dg maps, i_sobol and i_signal indices.
             noise_indices (list, range): The noise indices to return.
 
         Returns:
@@ -360,7 +403,7 @@ class GridPipeline(MSFMpipeline):
         Returns:
             tuple: (out_tensor, cosmo, index) the elements of the dataset, where out_tensor has shape
             (batch_size, n_pix, n_z_metacal + n_z_maglim), cosmo is a label distributed on the Sobol sequence and index
-            is a tuple containing (i_sobol, i_example, i_noise).
+            is a tuple containing (i_sobol, i_signal, i_noise).
         """
         LOGGER.warning(f"Tracing _augmentations")
         LOGGER.info(f"Running on the data_vectors.keys() = {data_vectors.keys()}")
@@ -426,7 +469,9 @@ class GridPipeline(MSFMpipeline):
 
         # gather the indices
         i_sobol = data_vectors.pop("i_sobol")
-        i_example = data_vectors.pop("i_example")
+        i_signal = data_vectors.pop("i_example")
+        # TODO
+        # i_signal = data_vectors.pop("i_signal")
         i_noise = data_vectors.pop("i_noise")
 
-        return map_tensor, cl_tensor, cosmo, (i_sobol, i_example, i_noise)
+        return map_tensor, cl_tensor, cosmo, (i_sobol, i_signal, i_noise)
