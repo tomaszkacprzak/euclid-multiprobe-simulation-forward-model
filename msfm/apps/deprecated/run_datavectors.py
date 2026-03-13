@@ -145,9 +145,9 @@ def main(indices, args):
 
     n_patches = conf["analysis"]["n_patches"]
     n_perms_per_cosmo = conf["analysis"][args.simset]["n_perms_per_cosmo"]
-    n_noise_per_example = conf["analysis"][args.simset]["n_noise_per_example"]
+    n_noise_per_signal = conf["analysis"][args.simset]["n_noise_per_signal"]
     LOGGER.info(f"Looping through {n_perms_per_cosmo} permutations per cosmological parameter set")
-    LOGGER.info(f"Generating {n_noise_per_example} noise realizations per example")
+    LOGGER.info(f"Generating {n_noise_per_signal} noise realizations per signal realization")
 
     degrade_to_grf = conf["analysis"]["modelling"]["degrade_to_grf"]
     if degrade_to_grf:
@@ -274,7 +274,7 @@ def main(indices, args):
                         dvs_shape = (n_patches, data_vec_len, n_z_bins)
 
                     elif out_map_type == "sn":
-                        dvs_shape = (n_patches, n_noise_per_example, data_vec_len, n_z_bins)
+                        dvs_shape = (n_patches, n_noise_per_signal, data_vec_len, n_z_bins)
 
                         if args.store_counts:
                             data_vec_container["ct"] = np.zeros((n_patches, data_vec_len, n_z_bins), dtype=np.int16)
@@ -382,11 +382,11 @@ def main(indices, args):
                                     # not a full healpy map, just the patch with no zeros
                                     counts = counts_full[patch_pix]
 
-                                    # vectorized sampling, shape (len(counts), n_noise_per_example)
-                                    gamma1, gamma2 = lensing.noise_gen(counts, cat_dist, n_noise_per_example)
+                                    # vectorized sampling, shape (len(counts), n_noise_per_signal)
+                                    gamma1, gamma2 = lensing.noise_gen(counts, cat_dist, n_noise_per_signal)
 
                                     # not vectorized because of the healpy alm transform
-                                    for i_noise in range(n_noise_per_example):
+                                    for i_noise in range(n_noise_per_signal):
                                         # full healpy map with zeros outside the footprint
                                         gamma1_patch = np.zeros(n_pix, dtype=np.float32)
                                         gamma1_patch[base_patch_pix] = gamma1[:, i_noise]
@@ -457,7 +457,7 @@ def main(indices, args):
                 i_perm,
                 n_perms_per_cosmo,
                 n_patches,
-                n_noise_per_example,
+                n_noise_per_signal,
                 data_vec_len,
             )
 
@@ -468,7 +468,7 @@ def main(indices, args):
 
 
 def _save_output_container(
-    conf, filename, container, i_perm, n_perms_per_cosmo, n_patches, n_noise_per_example, output_len
+    conf, filename, container, i_perm, n_perms_per_cosmo, n_patches, n_noise_per_signal, output_len
 ):
     """Saves an .h5 file collecting all results on the level of the cosmological parameters (so for different
     permutations/runs and patches)
@@ -493,7 +493,7 @@ def _save_output_container(
 
             # there's multiple shape noise realizations
             if map_type == "sn":
-                out_shape = (n_perms_per_cosmo * n_patches, n_noise_per_example, output_len, n_z_bins)
+                out_shape = (n_perms_per_cosmo * n_patches, n_noise_per_signal, output_len, n_z_bins)
             else:
                 out_shape = (n_perms_per_cosmo * n_patches, output_len, n_z_bins)
 

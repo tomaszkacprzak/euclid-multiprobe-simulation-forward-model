@@ -203,11 +203,11 @@ def main(indices, args):
     n_patches = conf["analysis"]["n_patches"]
     n_cosmos = conf["analysis"]["grid"]["n_cosmos"]
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
-    n_noise_per_example = conf["analysis"]["grid"]["n_noise_per_example"]
-    n_examples_per_cosmo = n_patches * n_perms_per_cosmo * n_noise_per_example
+    n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
+    n_examples_per_cosmo = n_patches * n_perms_per_cosmo * n_noise_per_signal
     LOGGER.info(
         f"For every cosmology, theres {n_examples_per_cosmo} examples: "
-        f"{n_patches} patches times {n_perms_per_cosmo} permutations times {n_noise_per_example} noise realizations"
+        f"{n_patches} patches times {n_perms_per_cosmo} permutations times {n_noise_per_signal} noise realizations"
     )
 
     # modeling
@@ -326,7 +326,7 @@ def main(indices, args):
                     else [None] * n_examples_per_cosmo
                 )
 
-                # (n_examples_per_cosmo, n_noise_per_examplen_pix, n_z_bins)
+                # (n_examples_per_cosmo, n_noise_per_signaln_pix, n_z_bins)
                 sn_examples = data_vec_container["sn"]
 
                 i_sobol, cosmo = _extend_sobol_squence(conf, cosmo_params_info, i_cosmo)
@@ -337,17 +337,17 @@ def main(indices, args):
                 astro_samples = astro_samples.astype(np.float32)
 
                 # loop over the n_examples_per_cosmo
-                for i_example, (kg, ia, ds, sn_samples, dg, qdg) in LOGGER.progressbar(
+                for i_signal, (kg, ia, ds, sn_samples, dg, qdg) in LOGGER.progressbar(
                     enumerate(zip(kg_examples, ia_examples, ds_examples, sn_examples, dg_examples, qdg_examples)),
                     at_level="info",
                     desc="Looping through the per cosmology examples",
-                    total=n_examples_per_cosmo // n_noise_per_example,
+                    total=n_examples_per_cosmo // n_noise_per_signal,
                 ):
-                    if args.debug and i_example > n_patches:
+                    if args.debug and i_signal > n_patches:
                         LOGGER.warning(f"Debug mode, only processing the first {n_patches} examples")
                         break
 
-                    astro_sample = astro_samples[i_example]
+                    astro_sample = astro_samples[i_signal]
                     cosmo_sample = np.concatenate([cosmo, astro_sample])
 
                     # lensing
@@ -378,10 +378,10 @@ def main(indices, args):
                         raise ValueError(f"Unsupported configuration of clustering bias")
 
                     kg, sn_samples, alm_kg, alm_sn_samples = lensing_transform(
-                        kg, ia, ds, sn_samples, Aia, n_Aia, bta, np_seed=i_sobol + i_example
+                        kg, ia, ds, sn_samples, Aia, n_Aia, bta, np_seed=i_sobol + i_signal
                     )
                     dg, pn_samples, alm_dg, alm_pn_samples = clustering_transform(
-                        dg, tomo_bg, qdg, tomo_qbg, np_seed=i_sobol + i_example
+                        dg, tomo_bg, qdg, tomo_qbg, np_seed=i_sobol + i_signal
                     )
 
                     # cross-probe maps
@@ -396,7 +396,7 @@ def main(indices, args):
                         n_z_cross = n_z_metacal * n_z_maglim
 
                         xg = np.zeros((kg.shape[0], n_z_cross), dtype=np.float32)
-                        xn_samples = np.zeros((n_noise_per_example, kg.shape[0], n_z_cross), dtype=np.float32)
+                        xn_samples = np.zeros((n_noise_per_signal, kg.shape[0], n_z_cross), dtype=np.float32)
                         ix = 0
                         for i in LOGGER.progressbar(
                             range(n_z_metacal), desc="cross bins", total=n_z_metacal, at_level="debug"
@@ -406,7 +406,7 @@ def main(indices, args):
                                 map_cross = hp.alm2map(alm_cross, nside=n_side, pol=False)
                                 xg[:, ix] = hp.reorder(map_cross, r2n=True)[data_vec_pix]
 
-                                for k in range(n_noise_per_example):
+                                for k in range(n_noise_per_signal):
                                     alm_cross_noise = np.sqrt(alm_sn_samples[k][:, i] * alm_pn_samples[k][:, j])
                                     map_cross_noise = hp.alm2map(alm_cross_noise, nside=n_side, pol=False)
                                     xn_samples[k, :, ix] = hp.reorder(map_cross_noise, r2n=True)[data_vec_pix]
@@ -417,19 +417,19 @@ def main(indices, args):
                     cls = power_spectra.run_tfrecords_alm_to_cl(alm_kg, alm_sn_samples, alm_dg, alm_pn_samples)
 
                     serialized = tfrecords.parse_forward_grid(
-                        kg, sn_samples, dg, pn_samples, cls, cosmo_sample, i_sobol, i_example, xg, xn_samples
+                        kg, sn_samples, dg, pn_samples, cls, cosmo_sample, i_sobol, i_signal, xg, xn_samples
                     ).SerializeToString()
 
                     _verify_tfrecord(
                         serialized,
-                        n_noise_per_example,
+                        n_noise_per_signal,
                         kg,
                         sn_samples,
                         dg,
                         pn_samples,
                         cosmo_sample,
                         i_sobol,
-                        i_example,
+                        i_signal,
                         cls,
                         xg,
                         xn_samples,
@@ -547,7 +547,7 @@ def _get_lensing_transform(conf, pixel_file):
 
 def _get_clustering_transform(conf, pixel_file):
     n_side = conf["analysis"]["n_side"]
-    n_noise_per_example = conf["analysis"]["grid"]["n_noise_per_example"]
+    n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
 
     # modeling
     quadratic_biasing = conf["analysis"]["modelling"]["clustering"]["quadratic_biasing"]
@@ -608,7 +608,7 @@ def _get_clustering_transform(conf, pixel_file):
         )
 
         # draw noise, mask, smooth
-        pn_samples = clustering.galaxy_count_to_noise(dg, n_noise_per_example, np_seed=np_seed)
+        pn_samples = clustering.galaxy_count_to_noise(dg, n_noise_per_signal, np_seed=np_seed)
 
         smooth_pn_samples, alm_pn_samples = [], []
         for i, pn in enumerate(pn_samples):
@@ -625,7 +625,7 @@ def _get_clustering_transform(conf, pixel_file):
         # noiseless
         dg, alm_dg = clustering_smoothing(dg, np_seed)
 
-        # shapes (n_pix, n_z_maglim), (n_noise_per_example, n_pix, n_z_maglim)
+        # shapes (n_pix, n_z_maglim), (n_noise_per_signal, n_pix, n_z_maglim)
         return dg, pn_samples, alm_dg, alm_pn_samples
 
     return clustering_transform
@@ -677,23 +677,23 @@ def _extend_sobol_squence(conf, cosmo_params_info, i_cosmo):
 
 def _verify_tfrecord(
     serialized,
-    n_noise_per_example,
+    n_noise_per_signal,
     kg,
     sn_samples,
     dg,
     pn_samples,
     cosmo,
     i_sobol,
-    i_example,
+    i_signal,
     cls,
     xg=None,
     xn_samples=None,
 ):
     with_cross_probe = xg is not None and xn_samples is not None
 
-    inv_tfr = tfrecords.parse_inverse_grid(serialized, range(n_noise_per_example), with_cross=with_cross_probe)
+    inv_tfr = tfrecords.parse_inverse_grid(serialized, range(n_noise_per_signal), with_cross=with_cross_probe)
 
-    for i_noise in range(n_noise_per_example):
+    for i_noise in range(n_noise_per_signal):
         assert np.allclose(inv_tfr[f"kg_{i_noise}"], kg + sn_samples[i_noise])
         assert np.allclose(inv_tfr[f"dg_{i_noise}"], dg + pn_samples[i_noise])
         assert np.allclose(inv_tfr[f"cl_{i_noise}"], cls[i_noise])
@@ -701,7 +701,7 @@ def _verify_tfrecord(
             assert np.allclose(inv_tfr[f"xg_{i_noise}"], xg + xn_samples[i_noise])
     assert np.allclose(inv_tfr["cosmo"], cosmo)
     assert np.allclose(inv_tfr["i_sobol"], i_sobol)
-    assert np.allclose(inv_tfr["i_example"], i_example)
+    assert np.allclose(inv_tfr["i_signal"], i_signal)
     LOGGER.debug("Decoded the map part of the .tfrecord successfully")
 
     inv_cls = tfrecords.parse_inverse_grid_cls(serialized)
@@ -709,7 +709,7 @@ def _verify_tfrecord(
     assert np.allclose(inv_cls["cls"], cls)
     assert np.allclose(inv_cls["cosmo"], cosmo)
     assert np.allclose(inv_cls["i_sobol"], i_sobol)
-    assert np.allclose(inv_cls["i_example"], i_example)
+    assert np.allclose(inv_cls["i_signal"], i_signal)
     LOGGER.debug("Decoded the cls part of the .tfrecord successfully")
 
 
@@ -720,7 +720,7 @@ def merge(indices, args):
     n_cosmos = conf["analysis"]["grid"]["n_cosmos"]
     n_patches = conf["analysis"]["n_patches"]
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
-    n_noise_per_example = conf["analysis"]["grid"]["n_noise_per_example"]
+    n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     n_signal_per_cosmo = n_patches * n_perms_per_cosmo
 
     tfr_pattern = filenames.get_filename_tfrecords(
@@ -762,7 +762,7 @@ def merge(indices, args):
             cls = example["cls"].numpy()
             cosmo = example["cosmo"].numpy()
             i_sobol = example["i_sobol"].numpy()
-            i_example = example["i_example"].numpy()
+            i_signal = example["i_signal"].numpy()
 
             # concatenate the noise realizations along the same axis as the examples
             cls = np.concatenate([cls[:, i, ...] for i in range(cls.shape[1])], axis=0)
@@ -771,13 +771,13 @@ def merge(indices, args):
             binned_cls, bin_edges = power_spectra.bin_according_to_config(cls, conf)
 
             # tiling has the same form as the above concatenation
-            cosmo = np.tile(cosmo, (n_noise_per_example, 1))
-            i_sobol = np.tile(i_sobol, n_noise_per_example)
-            i_example = np.tile(i_example, n_noise_per_example)
+            cosmo = np.tile(cosmo, (n_noise_per_signal, 1))
+            i_sobol = np.tile(i_sobol, n_noise_per_signal)
+            i_signal = np.tile(i_signal, n_noise_per_signal)
 
             # noise is treated separately because it's along a separate dimension in the .tfrecords. This here is preserves
             # the order imposed above in power_spectrum = ...
-            i_noise = np.arange(n_noise_per_example)
+            i_noise = np.arange(n_noise_per_signal)
             i_noise = np.repeat(i_noise, n_signal_per_cosmo)
 
             if i == 0:
@@ -786,7 +786,7 @@ def merge(indices, args):
                 f.create_dataset("cls/bin_edges", shape=(n_cosmos,) + bin_edges.shape, dtype="f4")
                 f.create_dataset("cosmo", shape=(n_cosmos,) + cosmo.shape, dtype="f4")
                 f.create_dataset("i_sobol", shape=(n_cosmos,) + i_sobol.shape, dtype="i4")
-                f.create_dataset("i_example", shape=(n_cosmos,) + i_example.shape, dtype="i4")
+                f.create_dataset("i_signal", shape=(n_cosmos,) + i_signal.shape, dtype="i4")
                 f.create_dataset("i_noise", shape=(n_cosmos,) + i_noise.shape, dtype="i4")
 
             f["cls/raw"][i] = cls
@@ -794,7 +794,7 @@ def merge(indices, args):
             f["cls/bin_edges"][i] = bin_edges
             f["cosmo"][i] = cosmo
             f["i_sobol"][i] = i_sobol
-            f["i_example"][i] = i_example
+            f["i_signal"][i] = i_signal
             f["i_noise"][i] = i_noise
 
     LOGGER.info(f"Done with merging of the grid power spectra")

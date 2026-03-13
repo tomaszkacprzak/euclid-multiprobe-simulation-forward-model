@@ -112,7 +112,7 @@ def mode_removal(
 
 
 # making this a tf.function doesn't speed things up because the seg_ids are always different
-def noise_gen(counts, cat_dist, n_noise_per_example):
+def noise_gen(counts, cat_dist, n_noise_per_signal):
     """Generates shape noise from a map of galaxy counts and joint distribution of absolute shear values and their
     weights.
 
@@ -120,10 +120,10 @@ def noise_gen(counts, cat_dist, n_noise_per_example):
         counts (np.ndarray): Array of shape (len(base_patch_pix),) that contains the galaxy count per pixel
         cat_dist (tfp.distributions): Distribution with samples of length 2 that contains the absolute magnitudes and
             weights
-        n_noise_per_example (int): Number of noise realizations to create, this dimension is included for vectorization
+        n_noise_per_signal (int): Number of noise realizations to create, this dimension is included for vectorization
 
     Returns:
-        np.ndarray: Arrays of shape (len(base_patch_pix, n_noise_per_example) containing the two gamma components
+        np.ndarray: Arrays of shape (len(base_patch_pix, n_noise_per_signal) containing the two gamma components
     """
 
     import tensorflow as tf
@@ -139,24 +139,24 @@ def noise_gen(counts, cat_dist, n_noise_per_example):
     # total number of galaxies in the patch
     n_gals_patch = len(seg_ids)
 
-    # shape (n_gals_patch, n_noise_per_example, 2)
-    cat_samples = cat_dist.sample(sample_shape=(n_gals_patch, n_noise_per_example))
-    # shape (n_gals_patch, n_noise_per_example)
+    # shape (n_gals_patch, n_noise_per_signal, 2)
+    cat_samples = cat_dist.sample(sample_shape=(n_gals_patch, n_noise_per_signal))
+    # shape (n_gals_patch, n_noise_per_signal)
     phase_samples = tf.random.uniform(
         shape=(
             n_gals_patch,
-            n_noise_per_example,
+            n_noise_per_signal,
         ),
         minval=0,
         maxval=2 * np.pi,
     )
 
-    # shape (n_gals_patch, n_noise_per_example)
+    # shape (n_gals_patch, n_noise_per_signal)
     g1_samples = tf.math.cos(phase_samples) * cat_samples[..., 0]
     g2_samples = tf.math.sin(phase_samples) * cat_samples[..., 0]
     w_samples = cat_samples[..., 1]
 
-    # shape (n_gals_patch, n_noise_per_example, 3)
+    # shape (n_gals_patch, n_noise_per_signal, 3)
     weighted_gamma_samples = tf.stack([g1_samples * w_samples, g2_samples * w_samples, w_samples], axis=-1)
 
     # len(base_patch_pix), unless the final pixels of the patch don't contain galaxies. Then, it's smaller
@@ -175,8 +175,8 @@ def noise_gen(counts, cat_dist, n_noise_per_example):
 
     if n_final_zero_pix > 0:
         # There is no galaxy in the final pixels, so the shape noise there is equal to zero
-        zero_pix = tf.zeros((n_final_zero_pix, n_noise_per_example, 2), dtype=tf.float32)
+        zero_pix = tf.zeros((n_final_zero_pix, n_noise_per_signal, 2), dtype=tf.float32)
         gamma_per_pix = tf.concat((gamma_per_pix, zero_pix), axis=0)
 
-    # shape (len(base_patch_pix), n_noise_per_example)
+    # shape (len(base_patch_pix), n_noise_per_signal)
     return gamma_per_pix[..., 0].numpy(), gamma_per_pix[..., 1].numpy()

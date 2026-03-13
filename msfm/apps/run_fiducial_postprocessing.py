@@ -225,11 +225,11 @@ def main(indices, args):
     # CosmoGrid
     n_patches = conf["analysis"]["n_patches"]
     n_perms_per_cosmo = conf["analysis"]["fiducial"]["n_perms_per_cosmo"]
-    n_noise_per_example = conf["analysis"]["fiducial"]["n_noise_per_example"]
-    n_examples_per_cosmo = n_patches * n_perms_per_cosmo * n_noise_per_example
+    n_noise_per_signal = conf["analysis"]["fiducial"]["n_noise_per_signal"]
+    n_examples_per_cosmo = n_patches * n_perms_per_cosmo * n_noise_per_signal
     LOGGER.info(
         f"For the fiducial cosmology, there's {n_examples_per_cosmo} in total: "
-        f"{n_patches} patches times {n_perms_per_cosmo} permutations times {n_noise_per_example} noise realizations"
+        f"{n_patches} patches times {n_perms_per_cosmo} permutations times {n_noise_per_signal} noise realizations"
     )
 
     # .tfrecords
@@ -336,10 +336,10 @@ def main(indices, args):
                     bg_perts = np.zeros((n_patches, n_bg_perts, data_vec_len, n_maglim_bins), dtype=np.float32)
 
                     all_sn_samples = np.zeros(
-                        (n_patches, n_noise_per_example, data_vec_len, n_metacal_bins), dtype=np.float32
+                        (n_patches, n_noise_per_signal, data_vec_len, n_metacal_bins), dtype=np.float32
                     )
                     all_pn_samples = np.zeros(
-                        (n_patches, n_noise_per_example, data_vec_len, n_maglim_bins), dtype=np.float32
+                        (n_patches, n_noise_per_signal, data_vec_len, n_maglim_bins), dtype=np.float32
                     )
                     all_i_example = np.zeros((n_patches,), dtype=np.int32)
 
@@ -352,13 +352,13 @@ def main(indices, args):
                     all_alm_pn = []
 
                     cl_perts = np.zeros(
-                        (n_patches, n_cosmo_perts, n_noise_per_example, n_ell, n_cross_bins), dtype=np.float32
+                        (n_patches, n_cosmo_perts, n_noise_per_signal, n_ell, n_cross_bins), dtype=np.float32
                     )
                     cl_ia_perts = np.zeros(
-                        (n_patches, n_ia_perts, n_noise_per_example, n_ell, n_cross_bins), dtype=np.float32
+                        (n_patches, n_ia_perts, n_noise_per_signal, n_ell, n_cross_bins), dtype=np.float32
                     )
                     cl_bg_perts = np.zeros(
-                        (n_patches, n_bg_perts, n_noise_per_example, n_ell, n_cross_bins), dtype=np.float32
+                        (n_patches, n_bg_perts, n_noise_per_signal, n_ell, n_cross_bins), dtype=np.float32
                     )
 
                     if args.no_derivatives:
@@ -381,8 +381,8 @@ def main(indices, args):
                         )
 
                         for i_patch in range(n_patches):
-                            i_example = i_perm * n_patches + i_patch
-                            all_i_example[i_patch] = i_example
+                            i_signal = i_perm * n_patches + i_patch
+                            all_i_example[i_patch] = i_signal
 
                             # shape (n_pix, n_z_bins)
                             kg_in = data_vec_container["kg"][i_patch]
@@ -395,7 +395,7 @@ def main(indices, args):
 
                             # astrophysics perturbations are calculated with respect to the fiducial cosmo params
                             if is_fiducial:
-                                # shape (n_noise_per_example, n_pix, n_z_bins) load the shape noise realization
+                                # shape (n_noise_per_signal, n_pix, n_z_bins) load the shape noise realization
                                 sn_samples_in = data_vec_container["sn"][i_patch]
 
                                 # add the signal and ia maps and smooth everything
@@ -405,12 +405,12 @@ def main(indices, args):
                                     ia_label="fiducial",
                                     is_true_fiducial=True,
                                     sn_samples=sn_samples_in,
-                                    np_seed=i_example,
+                                    np_seed=i_signal,
                                 )
 
                                 # convert dg to galaxy number and draw the poisson noise realization
                                 dg, pn_samples, alm_dg, alm_pn = clustering_transform(
-                                    dg_in, dg2_in, bg_label="fiducial", is_true_fiducial=True, np_seed=i_example
+                                    dg_in, dg2_in, bg_label="fiducial", is_true_fiducial=True, np_seed=i_signal
                                 )
 
                                 all_sn_samples[i_patch] = sn_samples
@@ -422,7 +422,7 @@ def main(indices, args):
                                 # intrinsic alignment perturbations
                                 for i_ia, ia_pert_label in enumerate(ia_pert_labels):
                                     ia_perts[i_patch, i_ia], alm_ia = lensing_transform(
-                                        kg_in, ia_in, ia_label=ia_pert_label, np_seed=i_example
+                                        kg_in, ia_in, ia_label=ia_pert_label, np_seed=i_signal
                                     )
                                     cl_ia_perts[i_patch, i_ia] = power_spectra.run_tfrecords_alm_to_cl(
                                         alm_ia, alm_sn, alm_dg, alm_pn
@@ -431,7 +431,7 @@ def main(indices, args):
                                 # galaxy clustering perturbations
                                 for i_bg, bg_pert_label in enumerate(bg_pert_labels):
                                     bg_perts[i_patch, i_bg], alm_bg = clustering_transform(
-                                        dg_in, dg2_in, bg_label=bg_pert_label, np_seed=i_example
+                                        dg_in, dg2_in, bg_label=bg_pert_label, np_seed=i_signal
                                     )
                                     cl_bg_perts[i_patch, i_bg] = power_spectra.run_tfrecords_alm_to_cl(
                                         alm_kg, alm_sn, alm_bg, alm_pn
@@ -439,10 +439,8 @@ def main(indices, args):
 
                             # cosmological perturbations
                             else:
-                                kg, alm_kg = lensing_transform(kg_in, ia_in, ia_label="fiducial", np_seed=i_example)
-                                dg, alm_dg = clustering_transform(
-                                    dg_in, dg2_in, bg_label="fiducial", np_seed=i_example
-                                )
+                                kg, alm_kg = lensing_transform(kg_in, ia_in, ia_label="fiducial", np_seed=i_signal)
+                                dg, alm_dg = clustering_transform(dg_in, dg2_in, bg_label="fiducial", np_seed=i_signal)
 
                             kg_perts[i_patch, i_cosmo] = kg
                             dg_perts[i_patch, i_cosmo] = dg
@@ -471,7 +469,7 @@ def main(indices, args):
                 LOGGER.info(f"Writing the {n_patches} patches to the .tfrecord")
                 for i_patch in range(n_patches):
                     serialized = _serialize_and_verify(
-                        n_noise_per_example,
+                        n_noise_per_signal,
                         # labels
                         cosmo_pert_labels,
                         ia_pert_labels,
@@ -590,7 +588,7 @@ def _get_lensing_transform(conf, pixel_file):
 
 def _get_clustering_transform(conf, pixel_file):
     n_side = conf["analysis"]["n_side"]
-    n_noise_per_example = conf["analysis"]["fiducial"]["n_noise_per_example"]
+    n_noise_per_signal = conf["analysis"]["fiducial"]["n_noise_per_signal"]
     quadratic_biasing = conf["analysis"]["modelling"]["clustering"]["quadratic_biasing"]
 
     maglim_mask = files.get_tomo_dv_masks(conf)["maglim"]
@@ -659,7 +657,7 @@ def _get_clustering_transform(conf, pixel_file):
 
         # only draw the Poisson noise and return the alms for the fiducial, not the perturbations
         if is_true_fiducial:
-            pn_samples = clustering.galaxy_count_to_noise(dg, n_noise_per_example, np_seed=np_seed)
+            pn_samples = clustering.galaxy_count_to_noise(dg, n_noise_per_signal, np_seed=np_seed)
 
             smooth_pn_samples, alm_pn_samples = [], []
             for i, pn in enumerate(pn_samples):
@@ -686,7 +684,7 @@ def _get_clustering_transform(conf, pixel_file):
 
 
 def _serialize_and_verify(
-    n_noise_per_example,
+    n_noise_per_signal,
     # labels
     cosmo_pert_labels,
     ia_pert_labels,
@@ -701,7 +699,7 @@ def _serialize_and_verify(
     cl_perts,
     cl_ia_perts,
     cl_bg_perts,
-    i_example,
+    i_signal,
 ):
 
     # serialize
@@ -721,12 +719,12 @@ def _serialize_and_verify(
         cl_perts,
         cl_ia_perts,
         cl_bg_perts,
-        i_example,
+        i_signal,
     ).SerializeToString()
 
     # verify
     inv_tfr = tfrecords.parse_inverse_fiducial(
-        serialized, cosmo_pert_labels + ia_pert_labels + bg_pert_labels, range(n_noise_per_example)
+        serialized, cosmo_pert_labels + ia_pert_labels + bg_pert_labels, range(n_noise_per_signal)
     )
 
     # maps
@@ -739,10 +737,10 @@ def _serialize_and_verify(
     assert np.allclose(inv_ia_perts, ia_perts)
     assert np.allclose(inv_dg_perts, dg_perts)
     assert np.allclose(inv_bg_perts, bg_perts)
-    for i_noise in range(n_noise_per_example):
+    for i_noise in range(n_noise_per_signal):
         assert np.allclose(inv_tfr[f"sn_{i_noise}"], sn_samples[i_noise])
         assert np.allclose(inv_tfr[f"pn_{i_noise}"], pn_samples[i_noise])
-    assert np.allclose(inv_tfr["i_example"], i_example)
+    assert np.allclose(inv_tfr["i_signal"], i_signal)
 
     # power spectra
     inv_cl_perts = tf.stack([inv_tfr[f"cl_{pert_label}"] for pert_label in cosmo_pert_labels], axis=0)
@@ -758,7 +756,7 @@ def _serialize_and_verify(
     # legacy power spectra
     inv_cls = tfrecords.parse_inverse_fiducial_cls(serialized)
     assert np.allclose(inv_cls["cls"], cl_perts[0])
-    assert np.allclose(inv_cls["i_example"], i_example)
+    assert np.allclose(inv_cls["i_signal"], i_signal)
 
     LOGGER.debug("Decoded the cls part of the .tfrecord successfully")
 
@@ -796,7 +794,7 @@ def merge(indices, args):
         cls_dset, total=n_examples, desc="Looping through the .tfrecords", at_level="info"
     ):
         cls.append(example["cls"].numpy())
-        i_examples.append(int(example["i_example"]))
+        i_examples.append(int(example["i_signal"]))
 
     # noise realizations
     n_noise = example["cls"].numpy().shape[0]
@@ -832,7 +830,7 @@ def merge(indices, args):
         f.create_dataset("cls/raw", data=cls)
         f.create_dataset("cls/binned", data=binned_cls)
         f.create_dataset("cls/bin_edges", data=bin_edges)
-        f.create_dataset("i_example", data=i_examples)
+        f.create_dataset("i_signal", data=i_examples)
         f.create_dataset("i_noise", data=i_noise)
 
     LOGGER.info(f"Done with merging of the fiducial power spectra")

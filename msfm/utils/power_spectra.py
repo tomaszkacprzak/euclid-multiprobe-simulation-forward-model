@@ -2,7 +2,7 @@
 Created in September 2023
 Author: Arne Thomsen
 
-Tools to handle the calculate power spectra consistent with the forward modeled maps. These are based off 
+Tools to handle the calculate power spectra consistent with the forward modeled maps. These are based off
 https://cosmo-gitlab.phys.ethz.ch/jafluri/cosmogrid_kids1000/-/blob/master/scripts/human_summaries/eval_summaries
 by Janis Fluri.
 """
@@ -240,10 +240,10 @@ def run_tfrecords_alm_to_cl(alm_kg, alm_sn_realz, alm_dg, alm_pn_realz):
     """
 
     assert alm_sn_realz.shape[0] == alm_pn_realz.shape[0], f"alm_sn_realz and alm_pn_realz have different lengths"
-    n_noise_per_example = alm_sn_realz.shape[0]
+    n_noise_per_signal = alm_sn_realz.shape[0]
 
     cls = []
-    for i_noise in range(n_noise_per_example):
+    for i_noise in range(n_noise_per_signal):
         alms_lensing = alm_kg + alm_sn_realz[i_noise]
         alms_clustering = alm_dg + alm_pn_realz[i_noise]
 
@@ -252,7 +252,7 @@ def run_tfrecords_alm_to_cl(alm_kg, alm_sn_realz, alm_dg, alm_pn_realz):
 
         cls.append(get_cls(alms, with_cross=True))
 
-    # shape (n_noise_per_example, n_ell, n_cross_z)
+    # shape (n_noise_per_signal, n_ell, n_cross_z)
     cls = np.stack(cls, axis=0)
 
     return cls

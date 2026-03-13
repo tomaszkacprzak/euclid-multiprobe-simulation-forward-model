@@ -77,7 +77,7 @@ def merge(indices, args):
     n_cosmos = conf["analysis"]["grid"]["n_cosmos"]
     n_patches = conf["analysis"]["n_patches"]
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
-    n_noise_per_example = conf["analysis"]["grid"]["n_noise_per_example"]
+    n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     n_signal_per_cosmo = n_patches * n_perms_per_cosmo
 
     tfr_pattern = filenames.get_filename_tfrecords(
@@ -110,7 +110,7 @@ def merge(indices, args):
         cl = example["cls"].numpy()
         cosmo = example["cosmo"].numpy()
         i_sobol = example["i_sobol"].numpy()
-        i_example = example["i_example"].numpy()
+        i_signal = example["i_signal"].numpy()
 
         # concatenate the noise realizations along the same axis as the examples
         cl = np.concatenate([cl[:, i, ...] for i in range(cl.shape[1])], axis=0)
@@ -127,13 +127,13 @@ def merge(indices, args):
         )
 
         # tiling has the same form as the above concatenation
-        cosmo = np.tile(cosmo, (n_noise_per_example, 1))
-        i_sobol = np.tile(i_sobol, n_noise_per_example)
-        i_example = np.tile(i_example, n_noise_per_example)
+        cosmo = np.tile(cosmo, (n_noise_per_signal, 1))
+        i_sobol = np.tile(i_sobol, n_noise_per_signal)
+        i_signal = np.tile(i_signal, n_noise_per_signal)
 
         # noise is treated separately because it's along a separate dimension in the .tfrecords. This here is preserves
         # the order imposed above in power_spectrum = ...
-        i_noise = np.arange(n_noise_per_example)
+        i_noise = np.arange(n_noise_per_signal)
         i_noise = np.repeat(i_noise, n_signal_per_cosmo)
 
         cls.append(cl)
@@ -141,7 +141,7 @@ def merge(indices, args):
         bin_edges.append(bin_edge)
         cosmos.append(cosmo)
         i_sobols.append(i_sobol)
-        i_examples.append(i_example)
+        i_examples.append(i_signal)
         i_noises.append(i_noise)
 
     # results
@@ -167,7 +167,7 @@ def merge(indices, args):
         f.create_dataset("cls/bin_edges", data=bin_edges)
         f.create_dataset("cosmo", data=cosmos)
         f.create_dataset("i_sobol", data=i_sobols)
-        f.create_dataset("i_example", data=i_examples)
+        f.create_dataset("i_signal", data=i_examples)
         f.create_dataset("i_noise", data=i_noises)
 
     LOGGER.info(f"Done with merging of the grid power spectra")

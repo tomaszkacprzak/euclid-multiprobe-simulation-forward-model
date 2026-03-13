@@ -380,7 +380,7 @@ def forward_model_cosmogrid(
                             samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1
                         )
 
-                        gamma1_noise, gamma2_noise = lensing.noise_gen(counts, cat_dist, n_noise_per_example=1)
+                        gamma1_noise, gamma2_noise = lensing.noise_gen(counts, cat_dist, n_noise_per_signal=1)
                         gamma1_noise = gamma1_noise[:, 0]
                         gamma2_noise = gamma2_noise[:, 0]
                 else:
@@ -417,7 +417,7 @@ def forward_model_cosmogrid(
             maglim_bins = conf["survey"]["maglim"]["z_bins"]
             tomo_n_gal_maglim = np.array(conf["survey"]["maglim"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
 
-            # NOTE this assumes that the patches are the same for all tomographic bins, which is currently the case 
+            # NOTE this assumes that the patches are the same for all tomographic bins, which is currently the case
             i_z_pix = 0
             patch_pix = patches_pix_dict["maglim"][i_z_pix][0]
             cutout_patch_pix = patches_pix_dict["maglim"][i_z_pix][i_patch]
@@ -554,8 +554,8 @@ def make_shape_noise_map(wl_counts_map, conf, noise_seed=12):
             w = tomo_gamma_cat[i][:, 2]
             cat_dist = tfp.distributions.Empirical(samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1)
 
-            gamma1_noise, gamma2_noise = lensing.noise_gen(counts, cat_dist, n_noise_per_example=1)
-            
+            gamma1_noise, gamma2_noise = lensing.noise_gen(counts, cat_dist, n_noise_per_signal=1)
+
             # only take the first noise realization
             gamma1_noise = gamma1_noise[:, 0]
             gamma2_noise = gamma2_noise[:, 0]

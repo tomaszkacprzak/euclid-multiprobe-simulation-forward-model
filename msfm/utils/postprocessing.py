@@ -85,7 +85,7 @@ def postprocess_fiducial_permutations(args, conf, cosmo_dir_in, i_perm, pixel_fi
 
 def _set_up_per_example_dv_container(conf, pixel_file, is_fiducial):
     n_patches = conf["analysis"]["n_patches"]
-    n_noise_per_example = conf["analysis"]["fiducial"]["n_noise_per_example"]
+    n_noise_per_signal = conf["analysis"]["fiducial"]["n_noise_per_signal"]
     data_vec_len = len(pixel_file[0])
     out_map_types = conf["survey"]["metacal"]["map_types"]["output"] + conf["survey"]["maglim"]["map_types"]["output"]
 
@@ -97,7 +97,7 @@ def _set_up_per_example_dv_container(conf, pixel_file, is_fiducial):
         elif out_map_type == "sn":
             n_z_bins = len(conf["survey"]["metacal"]["z_bins"])
             if is_fiducial:
-                dvs_shape = (n_patches, n_noise_per_example, data_vec_len, n_z_bins)
+                dvs_shape = (n_patches, n_noise_per_signal, data_vec_len, n_z_bins)
             else:
                 dvs_shape = None
         elif out_map_type == "dg":
@@ -187,7 +187,7 @@ def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_fi
 def _set_up_per_cosmo_dv_container(conf, pixel_file):
     n_patches = conf["analysis"]["n_patches"]
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
-    n_noise_per_example = conf["analysis"]["grid"]["n_noise_per_example"]
+    n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     data_vec_len = len(pixel_file[0])
     out_map_types = conf["survey"]["metacal"]["map_types"]["output"] + conf["survey"]["maglim"]["map_types"]["output"]
 
@@ -201,7 +201,7 @@ def _set_up_per_cosmo_dv_container(conf, pixel_file):
             dvs_shape = (n_perms_per_cosmo * n_patches, data_vec_len, n_z_bins)
         elif out_map_type == "sn":
             n_z_bins = len(conf["survey"]["metacal"]["z_bins"])
-            dvs_shape = (n_perms_per_cosmo * n_patches, n_noise_per_example, data_vec_len, n_z_bins)
+            dvs_shape = (n_perms_per_cosmo * n_patches, n_noise_per_signal, data_vec_len, n_z_bins)
 
         data_vec_container[out_map_type] = np.zeros(dvs_shape, dtype=np.float32)
 
@@ -218,7 +218,7 @@ def postprocess_metacal_bin(
         # shape (n_patches, data_vec_len)
         kappa_dvs = postprocess_lensing(full_sky_map, conf, pixel_file, i_z)
     elif in_map_type == "dg" and out_map_type == "sn":
-        # shape (n_patches, n_noise_per_example, data_vec_len)
+        # shape (n_patches, n_noise_per_signal, data_vec_len)
         kappa_dvs = postprocess_shape_noise(full_sky_map, conf, simset, pixel_file, noise_file, i_z, bgs_key)
     elif in_map_type == "dg" and out_map_type == "ds":
         full_sky_ia = _read_full_sky_bin(conf, full_maps_file, "ia", conf["survey"]["metacal"]["z_bins"][i_z])
@@ -308,7 +308,7 @@ def postprocess_shape_noise(delta_full_sky, conf, simset, pixel_file, noise_file
     n_side = conf["analysis"]["n_side"]
     n_pix = conf["analysis"]["n_pix"]
     n_patches = conf["analysis"]["n_patches"]
-    n_noise_per_example = conf["analysis"][simset]["n_noise_per_example"]
+    n_noise_per_signal = conf["analysis"][simset]["n_noise_per_signal"]
 
     # pixel file
     data_vec_pix, patches_pix_dict, corresponding_pix_dict, _ = pixel_file
@@ -346,16 +346,16 @@ def postprocess_shape_noise(delta_full_sky, conf, simset, pixel_file, noise_file
     counts_full = clustering.galaxy_density_to_count(n_bar, delta_full_sky, bias, systematics_map=None).astype(int)
     counts_full = np.random.poisson(counts_full).astype(int)
 
-    kappa_dvs = np.zeros((n_patches, n_noise_per_example, data_vec_len), dtype=np.float32)
+    kappa_dvs = np.zeros((n_patches, n_noise_per_signal, data_vec_len), dtype=np.float32)
     for i_patch, patch_pix in enumerate(patches_pix):
         # not a full healpy map, just the patch with no zeros
         counts = counts_full[patch_pix]
 
-        # vectorized sampling, shape (len(counts), n_noise_per_example)
-        gamma1, gamma2 = lensing.noise_gen(counts, cat_dist, n_noise_per_example)
+        # vectorized sampling, shape (len(counts), n_noise_per_signal)
+        gamma1, gamma2 = lensing.noise_gen(counts, cat_dist, n_noise_per_signal)
 
         # not vectorized because of the healpy alm transform
-        for i_noise in range(n_noise_per_example):
+        for i_noise in range(n_noise_per_signal):
             # full healpy map with zeros outside the footprint
             gamma1_patch = np.zeros(n_pix, dtype=np.float32)
             gamma1_patch[base_patch_pix] = gamma1[:, i_noise]
@@ -383,7 +383,7 @@ def postprocess_shape_noise(delta_full_sky, conf, simset, pixel_file, noise_file
 
             kappa_dvs[i_patch, i_noise] = kappa_dv
 
-    # shape (n_patches, n_noise_per_example, data_vec_len)
+    # shape (n_patches, n_noise_per_signal, data_vec_len)
     return kappa_dvs
 
 

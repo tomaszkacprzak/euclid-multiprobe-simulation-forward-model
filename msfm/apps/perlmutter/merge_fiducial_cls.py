@@ -100,7 +100,7 @@ def merge(indices, args):
         cls_dset, total=n_examples, desc="Looping through the .tfrecords", at_level="info"
     ):
         cls.append(example["cls"].numpy())
-        i_examples.append(int(example["i_example"]))
+        i_examples.append(int(example["i_signal"]))
 
     # noise realizations
     n_noise = example["cls"].numpy().shape[0]
@@ -144,7 +144,7 @@ def merge(indices, args):
         f.create_dataset("cls/raw", data=cls)
         f.create_dataset("cls/binned", data=binned_cls)
         f.create_dataset("cls/bin_edges", data=bin_edges)
-        f.create_dataset("i_example", data=i_examples)
+        f.create_dataset("i_signal", data=i_examples)
         f.create_dataset("i_noise", data=i_noise)
 
     LOGGER.info(f"Done with merging of the fiducial power spectra")
