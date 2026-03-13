@@ -45,6 +45,8 @@ survey:
         sigma: [0.0091, 0.0078, 0.0076, 0.0076]
     # pivot redshift from https://arxiv.org/pdf/2105.13543
     z0: 0.62
+    R_gamma: [0.7636, 0.7182, 0.6887, 0.6154]
+    R_s: [0.0046, 0.0083, 0.0126, 0.0145]
   maglim:
     map_types:
       input: [dg]
@@ -62,6 +64,8 @@ survey:
       scale:
         mu: [0.975, 1.306, 0.870, 0.918] # , 1.08, 0.845]
         sigma: [0.062, 0.093, 0.053, 0.051] # , 0.067, 0.073]
+  # from Table 1 in https://arxiv.org/pdf/2105.13543
+  Aeff: 4143
 
 analysis:
   n_side: 512
@@ -169,7 +173,7 @@ analysis:
     # CosmoGrid
     n_cosmos: 2500
     n_perms_per_cosmo: 20
-    n_noise_per_example: 5
+    n_noise_per_signal: 5
     priors:
       # from Table 1 in https://arxiv.org/pdf/2201.07771.pdf
       Om: [0.1, 0.5]
@@ -205,7 +209,7 @@ analysis:
     # CosmoGrid
     n_cosmos: 17 # 1 + 2 * n_perts
     n_perms_per_cosmo: 1000
-    n_noise_per_example: 10
+    n_noise_per_signal: 10
     # from Table 1 in https://arxiv.org/pdf/2201.07771.pdf
     Om: 0.26
     s8: 0.84

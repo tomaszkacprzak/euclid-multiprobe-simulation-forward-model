@@ -114,8 +114,7 @@ analysis:
   peak_statistics:
     n_bins: 15
     # FWHM of a Gaussian in arcmin (calculated in scale_cuts.ipynb)
-    theta_fwhm:
-      [
+    theta_fwhm: [
         # metacal 4, 6, 8 Mpc/h
         [14.8, 22.1, 29.5],
         [10.1, 15.1, 20.1],
@@ -131,7 +130,7 @@ analysis:
     # CosmoGrid
     n_cosmos: 2500
     n_perms_per_cosmo: 4
-    n_noise_per_example: 3
+    n_noise_per_signal: 3
     priors:
       # from Table 1 in https://arxiv.org/pdf/2201.07771.pdf
       Om: [0.1, 0.5]
@@ -159,7 +158,7 @@ analysis:
     # CosmoGrid
     n_cosmos: 17 # 1 + 2 * n_perts
     n_perms_per_cosmo: 200
-    n_noise_per_example: 3
+    n_noise_per_signal: 3
     # from Table 1 in https://arxiv.org/pdf/2201.07771.pdf
     Om: 0.26
     s8: 0.84

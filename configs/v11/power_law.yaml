@@ -150,7 +150,7 @@ analysis:
     # CosmoGrid
     n_cosmos: 2500
     n_perms_per_cosmo: 20
-    n_noise_per_example: 5
+    n_noise_per_signal: 5
     priors:
       # from Table 1 in https://arxiv.org/pdf/2201.07771.pdf
       Om: [0.1, 0.5]
@@ -185,7 +185,7 @@ analysis:
     # CosmoGrid
     n_cosmos: 17 # 1 + 2 * n_perts
     n_perms_per_cosmo: 1000
-    n_noise_per_example: 10
+    n_noise_per_signal: 10
     # from Table 1 in https://arxiv.org/pdf/2201.07771.pdf
     Om: 0.26
     s8: 0.84
