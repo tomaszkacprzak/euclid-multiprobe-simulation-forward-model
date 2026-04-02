@@ -24,7 +24,7 @@ warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
 
 
-def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_example, xg=None, xn_realz=None):
+def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal, xg=None, xn_realz=None):
     """The grid cosmologies contain all of the maps and labels.
 
     Args:
@@ -36,7 +36,7 @@ def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_exampl
         cls (np.ndarray): Auto and cross bin (both in terms of the tomographic bins, and the two probes) power spectra.
             The shape is (n_noise, n_cls, n_z_cross).
         i_sobol (int): Seed within the Sobol sequence.
-        i_example (int): Example index, which is determined by the simulation run and the patch.
+        i_signal (int): Example index, which is determined by the simulation run and the patch.
         xg (np.ndarray, optional): shape(n_pix, n_z_cross), cross-maps between kg and dg. Defaults to None.
         xn_realz (np.ndarray, optional): shape(n_noise, n_pix, n_z_cross), noise realizations for the cross-maps.
             Defaults to None.
@@ -60,7 +60,7 @@ def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_exampl
         # labels
         "cosmo": _bytes_feature(tf.io.serialize_tensor(cosmo)),
         "i_sobol": _int64_feature(i_sobol),
-        "i_example": _int64_feature(i_example),
+        "i_signal": _int64_feature(i_signal),
         # power spectra
         "cls": _bytes_feature(tf.io.serialize_tensor(cls)),
         "n_noise": _int64_feature(cls.shape[0]),
@@ -124,7 +124,7 @@ def parse_inverse_grid(
         return_cls (bool, optional): Whether to return the cls. Defaults to True.
     Returns:
         dict: Dictionary containing the tensors for the different fields, the cosmological parameters and indices
-        i_sobol and i_example.
+        i_sobol and i_signal.
     """
     # LOGGER.warning(f"Tracing parse_inverse_grid")
 
@@ -136,6 +136,8 @@ def parse_inverse_grid(
         "cosmo": tf.io.FixedLenFeature([], tf.string),
         "i_sobol": tf.io.FixedLenFeature([], tf.int64),
         "i_example": tf.io.FixedLenFeature([], tf.int64),
+        # TODO
+        # "i_signal": tf.io.FixedLenFeature([], tf.int64),
         # power spectra
         "cls": tf.io.FixedLenFeature([], tf.string),
         "n_noise": tf.io.FixedLenFeature([], tf.int64),
@@ -213,6 +215,8 @@ def parse_inverse_grid(
     # indices
     output_data["i_sobol"] = serialized_data["i_sobol"]
     output_data["i_example"] = serialized_data["i_example"]
+    # TODO
+    # output_data["i_signal"] = serialized_data["i_signal"]
 
     return output_data
 
@@ -240,7 +244,7 @@ def parse_inverse_grid_cls(
 
     Returns:
         tf.tensors, int: Tensors containing the different fields, the cosmological parameters and indices i_sobol and
-            i_example.
+            i_signal.
     """
 
     features = {
@@ -253,7 +257,7 @@ def parse_inverse_grid_cls(
         # labels
         "cosmo": tf.io.FixedLenFeature([], tf.string),
         "i_sobol": tf.io.FixedLenFeature([], tf.int64),
-        "i_example": tf.io.FixedLenFeature([], tf.int64),
+        "i_signal": tf.io.FixedLenFeature([], tf.int64),
     }
 
     serialized_data = tf.io.parse_single_example(serialized_example, features)
@@ -281,7 +285,7 @@ def parse_inverse_grid_cls(
 
     # indices
     output_data["i_sobol"] = serialized_data["i_sobol"]
-    output_data["i_example"] = serialized_data["i_example"]
+    output_data["i_signal"] = serialized_data["i_signal"]
 
     return output_data
 
@@ -303,7 +307,7 @@ def parse_forward_fiducial(
     cl_ia_perts,
     cl_bg_perts,
     # label
-    i_example,
+    i_signal,
 ):
     """The fiducials don't need a label and contain the perturbation for the delta loss with
     n_perts = 2 * n_params + 1
@@ -321,7 +325,7 @@ def parse_forward_fiducial(
         pn_realz (np.ndarray): Poisson noise realizations of shape(n_noise, n_pix, n_z_maglim).
         cls (np.ndarray): Auto and cross bin (both in terms of the tomographic bins, and the two probes) power spectra.
             The shape is (n_noise, n_cls, n_z_cross).
-        i_example (int): example index (comes from simulation run and the patch), there are
+        i_signal (int): example index (comes from simulation run and the patch), there are
             n_perms_per_cosmo * n_patches.
 
     Returns:
@@ -349,7 +353,7 @@ def parse_forward_fiducial(
         "n_z_metacal": _int64_feature(kg_perts[0].shape[1]),
         "n_z_maglim": _int64_feature(dg_perts[0].shape[1]),
         # label
-        "i_example": _int64_feature(i_example),
+        "i_signal": _int64_feature(i_signal),
         # power spectra
         "cls": _bytes_feature(tf.io.serialize_tensor(cl_perts[0])),
         "n_noise": _int64_feature(cl_perts.shape[1]),
@@ -420,7 +424,7 @@ def parse_inverse_fiducial(
             True.
 
     Returns:
-        dict, int: Dictionary of datavectors (fiducial, perturbations and shape noise) and the patch index (i_example).
+        dict, int: Dictionary of datavectors (fiducial, perturbations and shape noise) and the patch index (i_signal).
     """
     # LOGGER.warning(f"Tracing parse_inverse_fiducial")
 
@@ -433,7 +437,7 @@ def parse_inverse_fiducial(
         "n_cls": tf.io.FixedLenFeature([], tf.int64),
         "n_z_cross": tf.io.FixedLenFeature([], tf.int64),
         # label
-        "i_example": tf.io.FixedLenFeature([], tf.int64),
+        "i_signal": tf.io.FixedLenFeature([], tf.int64),
     }
 
     # all perturbation parameters
@@ -518,7 +522,7 @@ def parse_inverse_fiducial(
                 )
 
     # indices
-    output_data["i_example"] = serialized_data["i_example"]
+    output_data["i_signal"] = serialized_data["i_signal"]
 
     return output_data
 
@@ -544,7 +548,7 @@ def parse_inverse_fiducial_cls(
         n_params (int, optional): Fixes the size of the tensors. Defaults to None.
 
     Returns:
-        dict, int: Dictionary of datavectors (fiducial, perturbations and shape noise) and the patch index (i_example).
+        dict, int: Dictionary of datavectors (fiducial, perturbations and shape noise) and the patch index (i_signal).
     """
 
     features = {
@@ -554,7 +558,7 @@ def parse_inverse_fiducial_cls(
         "n_cls": tf.io.FixedLenFeature([], tf.int64),
         "n_z_cross": tf.io.FixedLenFeature([], tf.int64),
         # labels
-        "i_example": tf.io.FixedLenFeature([], tf.int64),
+        "i_signal": tf.io.FixedLenFeature([], tf.int64),
     }
 
     serialized_data = tf.io.parse_single_example(serialized_example, features)
@@ -573,7 +577,7 @@ def parse_inverse_fiducial_cls(
     output_data["cls"] = cls
 
     # indices
-    output_data["i_example"] = serialized_data["i_example"]
+    output_data["i_signal"] = serialized_data["i_signal"]
 
     return output_data
 

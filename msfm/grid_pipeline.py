@@ -85,8 +85,8 @@ class GridPipeline(MSFMpipeline):
         # used to reshape the stored tensors, and for nothing else
         self.n_all_params = len(self.all_params)
 
-        self.n_noise = self.conf["analysis"]["grid"]["n_noise_per_signal"]
-        self.n_signal = self.conf["analysis"]["n_patches"] * self.conf["analysis"]["grid"]["n_perms_per_cosmo"]
+        self.n_noise_total = self.conf["analysis"]["grid"]["n_noise_per_signal"]
+        self.n_signal_total = self.conf["analysis"]["n_patches"] * self.conf["analysis"]["grid"]["n_perms_per_cosmo"]
 
     def _parse_indices(
         self, indices: Union[int, float, list, range], name: str, fallback_length: int, is_eval: bool = False
@@ -217,8 +217,10 @@ class GridPipeline(MSFMpipeline):
             LOGGER.info(f"drop_remainder is not set, using drop_remainder = {drop_remainder}")
 
         # indexing
-        noise_indices = self._parse_indices(noise_indices, "noise_indices", self.n_noise, is_eval=is_eval)
-        signal_indices = self._parse_indices(signal_indices, "signal_indices", self.n_signal, is_eval=is_eval)
+        noise_indices = self._parse_indices(noise_indices, "noise_indices", self.n_noise_total, is_eval=is_eval)
+        signal_indices = self._parse_indices(signal_indices, "signal_indices", self.n_signal_total, is_eval=is_eval)
+        self.n_noise = len(noise_indices)
+        self.n_signal = len(signal_indices)
 
         # get the file names and dataset them
         dset = tf.data.Dataset.list_files(tfr_pattern, shuffle=(not is_eval), seed=file_name_shuffle_seed)
@@ -277,7 +279,7 @@ class GridPipeline(MSFMpipeline):
                 n_z_maglim=self.n_z_maglim,
                 n_z_cross=self.n_z_cross,
                 n_params=self.n_all_params,
-                n_noise=self.n_noise,
+                n_noise=self.n_noise_total,
                 n_cls=self.n_cls,
                 # map types
                 with_lensing=self.with_lensing,
