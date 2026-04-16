@@ -32,9 +32,17 @@ def postprocess_fiducial_permutations(args, conf, cosmo_dir_in, i_perm, pixel_fi
 
     is_fiducial = "cosmo_fiducial" in cosmo_dir_in
 
+    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
+    samples = []
+    if store_lensing:
+        samples.append("metacal")
+    if store_clustering:
+        samples.append("maglim")
+
     # output container, one for each example
     data_vec_container = _set_up_per_example_dv_container(conf, pixel_file, is_fiducial)
-    for sample in ["metacal", "maglim"]:
+    for sample in samples:
         LOGGER.timer.start("sample")
         LOGGER.info(f"Starting with sample {sample}")
 
@@ -87,7 +95,15 @@ def _set_up_per_example_dv_container(conf, pixel_file, is_fiducial):
     n_patches = conf["analysis"]["n_patches"]
     n_noise_per_signal = conf["analysis"]["fiducial"]["n_noise_per_signal"]
     data_vec_len = len(pixel_file[0])
-    out_map_types = conf["survey"]["metacal"]["map_types"]["output"] + conf["survey"]["maglim"]["map_types"]["output"]
+
+    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
+
+    out_map_types = []
+    if store_lensing:
+        out_map_types += conf["survey"]["metacal"]["map_types"]["output"]
+    if store_clustering:
+        out_map_types += conf["survey"]["maglim"]["map_types"]["output"]
 
     data_vec_container = {}
     for out_map_type in out_map_types:
@@ -120,6 +136,14 @@ def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_fi
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
     rng = np.random.default_rng()
 
+    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
+    samples = []
+    if store_lensing:
+        samples.append("metacal")
+    if store_clustering:
+        samples.append("maglim")
+
     # output container, one for each cosmology
     data_vec_container = _set_up_per_cosmo_dv_container(conf, pixel_file)
     for i_perm in LOGGER.progressbar(range(n_perms_per_cosmo), desc="Looping through permutations\n", at_level="info"):
@@ -131,7 +155,7 @@ def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_fi
 
         full_maps_file = _get_full_sky_perm(args, conf, cosmo_dir_in, i_perm)
 
-        for sample in ["metacal", "maglim"]:
+        for sample in samples:
             LOGGER.timer.start("sample")
             LOGGER.info(f"Starting with sample {sample}")
 
@@ -189,7 +213,15 @@ def _set_up_per_cosmo_dv_container(conf, pixel_file):
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     data_vec_len = len(pixel_file[0])
-    out_map_types = conf["survey"]["metacal"]["map_types"]["output"] + conf["survey"]["maglim"]["map_types"]["output"]
+
+    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
+
+    out_map_types = []
+    if store_lensing:
+        out_map_types += conf["survey"]["metacal"]["map_types"]["output"]
+    if store_clustering:
+        out_map_types += conf["survey"]["maglim"]["map_types"]["output"]
 
     data_vec_container = {}
     for out_map_type in out_map_types:

@@ -214,7 +214,10 @@ def main(indices, args):
     configuration.print_and_check_modeling_in_config(conf)
 
     baryonified = conf["analysis"]["modelling"]["baryonified"]
+
     store_cross_maps = conf["analysis"]["modelling"]["store_cross_maps"]
+    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
 
     extended_nla = conf["analysis"]["modelling"]["lensing"]["extended_nla"]
 
@@ -313,21 +316,23 @@ def main(indices, args):
                             pickle.dump(state, f)
 
                 # (n_examples_per_cosmo, n_pix, n_z_bins)
-                kg_examples = data_vec_container["kg"]
-                ia_examples = data_vec_container["ia"]
-                ds_examples = data_vec_container["ds"] if extended_nla else [None] * n_examples_per_cosmo
+                kg_examples = data_vec_container["kg"] if store_lensing else [None] * n_examples_per_cosmo
+                ia_examples = data_vec_container["ia"] if store_lensing else [None] * n_examples_per_cosmo
+                ds_examples = (
+                    data_vec_container["ds"] if store_lensing and extended_nla else [None] * n_examples_per_cosmo
+                )
 
-                dg_examples = data_vec_container["dg"]
+                dg_examples = data_vec_container["dg"] if store_clustering else [None] * n_examples_per_cosmo
                 # qdg_examples = data_vec_container["dg2"] if quadratic_biasing else [None] * n_examples_per_cosmo
                 # NOTE this is the naive quadratic bias map from DeepLSS
                 qdg_examples = (
                     np.square(dg_examples) * np.sign(dg_examples)
-                    if quadratic_biasing
+                    if store_clustering and quadratic_biasing
                     else [None] * n_examples_per_cosmo
                 )
 
                 # (n_examples_per_cosmo, n_noise_per_signaln_pix, n_z_bins)
-                sn_examples = data_vec_container["sn"]
+                sn_examples = data_vec_container["sn"] if store_lensing else [None] * n_examples_per_cosmo
 
                 i_sobol, cosmo = _extend_sobol_squence(conf, cosmo_params_info, i_cosmo)
 
@@ -377,17 +382,21 @@ def main(indices, args):
                     else:
                         raise ValueError(f"Unsupported configuration of clustering bias")
 
-                    kg, sn_samples, alm_kg, alm_sn_samples = lensing_transform(
-                        kg, ia, ds, sn_samples, Aia, n_Aia, bta, np_seed=i_sobol + i_signal
+                    kg, sn_samples, alm_kg, alm_sn_samples = (
+                        lensing_transform(kg, ia, ds, sn_samples, Aia, n_Aia, bta, np_seed=i_sobol + i_signal)
+                        if store_lensing
+                        else (None, None, None, None)
                     )
-                    dg, pn_samples, alm_dg, alm_pn_samples = clustering_transform(
-                        dg, tomo_bg, qdg, tomo_qbg, np_seed=i_sobol + i_signal
+                    dg, pn_samples, alm_dg, alm_pn_samples = (
+                        clustering_transform(dg, tomo_bg, qdg, tomo_qbg, np_seed=i_sobol + i_signal)
+                        if store_clustering
+                        else (None, None, None, None)
                     )
 
                     # cross-probe maps
                     xg = None
                     xn_samples = None
-                    if store_cross_maps:
+                    if store_cross_maps and store_lensing and store_clustering:
                         data_vec_pix = pixel_file[0]
                         n_side = conf["analysis"]["n_side"]
 
@@ -690,13 +699,25 @@ def _verify_tfrecord(
     xn_samples=None,
 ):
     with_cross_probe = xg is not None and xn_samples is not None
+    with_lensing = kg is not None and sn_samples is not None
+    with_clustering = dg is not None and pn_samples is not None
 
-    inv_tfr = tfrecords.parse_inverse_grid(serialized, range(n_noise_per_signal), with_cross=with_cross_probe)
+    inv_tfr = tfrecords.parse_inverse_grid(
+        serialized,
+        range(n_noise_per_signal),
+        with_lensing=with_lensing,
+        with_clustering=with_clustering,
+        with_cross=with_cross_probe,
+        return_cls=cls is not None,
+    )
 
     for i_noise in range(n_noise_per_signal):
-        assert np.allclose(inv_tfr[f"kg_{i_noise}"], kg + sn_samples[i_noise])
-        assert np.allclose(inv_tfr[f"dg_{i_noise}"], dg + pn_samples[i_noise])
-        assert np.allclose(inv_tfr[f"cl_{i_noise}"], cls[i_noise])
+        if with_lensing:
+            assert np.allclose(inv_tfr[f"kg_{i_noise}"], kg + sn_samples[i_noise])
+        if with_clustering:
+            assert np.allclose(inv_tfr[f"dg_{i_noise}"], dg + pn_samples[i_noise])
+        if cls is not None:
+            assert np.allclose(inv_tfr[f"cl_{i_noise}"], cls[i_noise])
         if with_cross_probe:
             assert np.allclose(inv_tfr[f"xg_{i_noise}"], xg + xn_samples[i_noise])
     assert np.allclose(inv_tfr["cosmo"], cosmo)
@@ -704,13 +725,14 @@ def _verify_tfrecord(
     assert np.allclose(inv_tfr["i_signal"], i_signal)
     LOGGER.debug("Decoded the map part of the .tfrecord successfully")
 
-    inv_cls = tfrecords.parse_inverse_grid_cls(serialized)
+    if cls is not None:
+        inv_cls = tfrecords.parse_inverse_grid_cls(serialized)
 
-    assert np.allclose(inv_cls["cls"], cls)
-    assert np.allclose(inv_cls["cosmo"], cosmo)
-    assert np.allclose(inv_cls["i_sobol"], i_sobol)
-    assert np.allclose(inv_cls["i_signal"], i_signal)
-    LOGGER.debug("Decoded the cls part of the .tfrecord successfully")
+        assert np.allclose(inv_cls["cls"], cls)
+        assert np.allclose(inv_cls["cosmo"], cosmo)
+        assert np.allclose(inv_cls["i_sobol"], i_sobol)
+        assert np.allclose(inv_cls["i_signal"], i_signal)
+        LOGGER.debug("Decoded the cls part of the .tfrecord successfully")
 
 
 def merge(indices, args):

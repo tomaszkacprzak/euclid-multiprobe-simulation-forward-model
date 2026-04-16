@@ -46,35 +46,36 @@ def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal
     """
     # LOGGER.warning(f"Tracing parse_forward_grid")
 
-    # sn_realz has an additional shape noise axis
-    assert kg.shape == sn_realz.shape[1:]
-    # the data vector dimension matches (while n_z does not)
-    assert kg.shape[0] == dg.shape[0]
-
     features = {
-        # tensor shapes
-        "n_pix": _int64_feature(kg.shape[0]),
-        "n_z_metacal": _int64_feature(kg.shape[1]),
-        "n_z_maglim": _int64_feature(dg.shape[1]),
-        "n_params": _int64_feature(cosmo.shape[0]),
         # labels
         "cosmo": _bytes_feature(tf.io.serialize_tensor(cosmo)),
+        "n_params": _int64_feature(cosmo.shape[0]),
         "i_sobol": _int64_feature(i_sobol),
         "i_signal": _int64_feature(i_signal),
-        # power spectra
-        "cls": _bytes_feature(tf.io.serialize_tensor(cls)),
-        "n_noise": _int64_feature(cls.shape[0]),
-        "n_cls": _int64_feature(cls.shape[1]),
-        "n_z_cross": _int64_feature(cls.shape[2]),
     }
 
-    # lensing (metacal), shape noise realizations
-    for i, sn in enumerate(sn_realz):
-        features[f"kg_{i}"] = _bytes_feature(tf.io.serialize_tensor(kg + sn))
+    if cls is not None:
+        features["cls"] = _bytes_feature(tf.io.serialize_tensor(cls))
+        features["n_noise"] = _int64_feature(cls.shape[0])
+        features["n_cls"] = _int64_feature(cls.shape[1])
+        features["n_z_cross"] = _int64_feature(cls.shape[2])
 
-    # clustering (maglim), poisson noise realizations
-    for i, pn in enumerate(pn_realz):
-        features[f"dg_{i}"] = _bytes_feature(tf.io.serialize_tensor(dg + pn))
+    if kg is not None and sn_realz is not None:
+        assert kg.shape == sn_realz.shape[1:]
+        features["n_pix"] = _int64_feature(kg.shape[0])
+        features["n_z_metacal"] = _int64_feature(kg.shape[1])
+        for i, sn in enumerate(sn_realz):
+            features[f"kg_{i}"] = _bytes_feature(tf.io.serialize_tensor(kg + sn))
+
+    if dg is not None and pn_realz is not None:
+        assert dg.shape == pn_realz.shape[1:]
+        if kg is None:
+            features["n_pix"] = _int64_feature(dg.shape[0])
+        else:
+            assert kg.shape[0] == dg.shape[0]
+        features["n_z_maglim"] = _int64_feature(dg.shape[1])
+        for i, pn in enumerate(pn_realz):
+            features[f"dg_{i}"] = _bytes_feature(tf.io.serialize_tensor(dg + pn))
 
     # cross-maps
     if (xg is not None) and (xn_realz is not None):
@@ -135,31 +136,36 @@ def parse_inverse_grid(
         # labels
         "cosmo": tf.io.FixedLenFeature([], tf.string),
         "i_sobol": tf.io.FixedLenFeature([], tf.int64),
-        "i_example": tf.io.FixedLenFeature([], tf.int64),
-        # TODO
-        # "i_signal": tf.io.FixedLenFeature([], tf.int64),
-        # power spectra
-        "cls": tf.io.FixedLenFeature([], tf.string),
-        "n_noise": tf.io.FixedLenFeature([], tf.int64),
-        "n_cls": tf.io.FixedLenFeature([], tf.int64),
-        "n_z_cross": tf.io.FixedLenFeature([], tf.int64),
+        "i_signal": tf.io.FixedLenFeature([], tf.int64),
     }
+
+    if return_cls:
+        features["cls"] = tf.io.FixedLenFeature([], tf.string)
+        features["n_noise"] = tf.io.FixedLenFeature([], tf.int64)
+        features["n_cls"] = tf.io.FixedLenFeature([], tf.int64)
+        features["n_z_cross"] = tf.io.FixedLenFeature([], tf.int64)
 
     if return_maps:
         if with_lensing:
-            features["n_z_metacal"] = tf.io.FixedLenFeature([], tf.int64)
             for i in noise_indices:
                 features[f"kg_{i}"] = tf.io.FixedLenFeature([], tf.string)
 
         if with_clustering:
-            features["n_z_maglim"] = tf.io.FixedLenFeature([], tf.int64)
             for i in noise_indices:
                 features[f"dg_{i}"] = tf.io.FixedLenFeature([], tf.string)
 
         if with_cross:
-            features["n_z_cross_map"] = tf.io.FixedLenFeature([], tf.int64)
             for i in noise_indices:
                 features[f"xg_{i}"] = tf.io.FixedLenFeature([], tf.string)
+
+    if with_lensing and (return_maps or return_cls):
+        features["n_z_metacal"] = tf.io.FixedLenFeature([], tf.int64)
+
+    if with_clustering and (return_maps or return_cls):
+        features["n_z_maglim"] = tf.io.FixedLenFeature([], tf.int64)
+
+    if with_cross and return_maps:
+        features["n_z_cross_map"] = tf.io.FixedLenFeature([], tf.int64)
 
     serialized_data = tf.io.parse_single_example(serialized_example, features)
 
@@ -191,9 +197,11 @@ def parse_inverse_grid(
                 )
 
         if return_cls:
+            n_z_mc = _parse_none_value(serialized_data, "n_z_metacal", n_z_metacal) if with_lensing else 0
+            n_z_ml = _parse_none_value(serialized_data, "n_z_maglim", n_z_maglim) if with_clustering else 0
             bin_indices, _ = cross_statistics.get_cross_bin_indices(
-                _parse_none_value(serialized_data, "n_z_metacal", n_z_metacal),
-                _parse_none_value(serialized_data, "n_z_maglim", n_z_maglim),
+                n_z_mc,
+                n_z_ml,
                 with_lensing,
                 with_clustering,
                 with_cross_z=True,
@@ -214,9 +222,7 @@ def parse_inverse_grid(
 
     # indices
     output_data["i_sobol"] = serialized_data["i_sobol"]
-    output_data["i_example"] = serialized_data["i_example"]
-    # TODO
-    # output_data["i_signal"] = serialized_data["i_signal"]
+    output_data["i_signal"] = serialized_data["i_signal"]
 
     return output_data
 

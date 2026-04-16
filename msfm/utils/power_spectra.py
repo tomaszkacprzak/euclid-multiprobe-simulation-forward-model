@@ -239,16 +239,26 @@ def run_tfrecords_alm_to_cl(alm_kg, alm_sn_realz, alm_dg, alm_pn_realz):
         np.ndarray: Shape (n_noise, n_cls, n_z_cross), where n_z_cross = n_z_bins * (n_z_bins + 1) / 2.
     """
 
-    assert alm_sn_realz.shape[0] == alm_pn_realz.shape[0], f"alm_sn_realz and alm_pn_realz have different lengths"
-    n_noise_per_signal = alm_sn_realz.shape[0]
+    if alm_sn_realz is not None:
+        n_noise_per_signal = alm_sn_realz.shape[0]
+    elif alm_pn_realz is not None:
+        n_noise_per_signal = alm_pn_realz.shape[0]
+    else:
+        raise ValueError("Both alm_sn_realz and alm_pn_realz are None")
+
+    if alm_sn_realz is not None and alm_pn_realz is not None:
+        assert alm_sn_realz.shape[0] == alm_pn_realz.shape[0], f"alm_sn_realz and alm_pn_realz have different lengths"
 
     cls = []
     for i_noise in range(n_noise_per_signal):
-        alms_lensing = alm_kg + alm_sn_realz[i_noise]
-        alms_clustering = alm_dg + alm_pn_realz[i_noise]
+        alms_list = []
+        if alm_kg is not None and alm_sn_realz is not None:
+            alms_list.append(alm_kg + alm_sn_realz[i_noise])
+        if alm_dg is not None and alm_pn_realz is not None:
+            alms_list.append(alm_dg + alm_pn_realz[i_noise])
 
         # concatenate redshift bins
-        alms = np.concatenate((alms_lensing, alms_clustering), axis=1)
+        alms = np.concatenate(alms_list, axis=1)
 
         cls.append(get_cls(alms, with_cross=True))
 

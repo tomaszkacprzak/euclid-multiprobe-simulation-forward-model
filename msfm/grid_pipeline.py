@@ -471,9 +471,7 @@ class GridPipeline(MSFMpipeline):
 
         # gather the indices
         i_sobol = data_vectors.pop("i_sobol")
-        i_signal = data_vectors.pop("i_example")
-        # TODO
-        # i_signal = data_vectors.pop("i_signal")
+        i_signal = data_vectors.pop("i_signal")
         i_noise = data_vectors.pop("i_noise")
 
         return map_tensor, cl_tensor, cosmo, (i_sobol, i_signal, i_noise)
