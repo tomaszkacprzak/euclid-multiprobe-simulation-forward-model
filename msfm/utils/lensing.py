@@ -180,3 +180,54 @@ def noise_gen(counts, cat_dist, n_noise_per_signal):
 
     # shape (len(base_patch_pix), n_noise_per_signal)
     return gamma_per_pix[..., 0].numpy(), gamma_per_pix[..., 1].numpy()
+
+
+def noise_gen_in_place(gamma_abs, w, pix, base_patch_pix, n_pix, n_noise_per_signal):
+    """Generates shape noise by rotating galaxies from the catalog in-place.
+
+    Args:
+        gamma_abs (np.ndarray or tf.Tensor): Absolute shear |e| for each catalog galaxy
+        w (np.ndarray or tf.Tensor): Weight for each catalog galaxy
+        pix (np.ndarray or tf.Tensor): Pixel index for each catalog galaxy in the full sky map
+        base_patch_pix (np.ndarray): The pixels that make up the current footprint cutout
+        n_pix (int): Total number of pixels in the healpy map
+        n_noise_per_signal (int): Number of noise realizations
+
+    Returns:
+        np.ndarray: Arrays of shape (len(base_patch_pix), n_noise_per_signal) containing the two gamma components
+    """
+    import tensorflow as tf
+
+    # Place operations on CPU to avoid GPU OOM on shared login nodes where GPU memory is highly restricted
+    with tf.device("/CPU:0"):
+        pix = tf.cast(pix, tf.int32)
+        n_gals = tf.shape(gamma_abs)[0]
+
+        # shape (n_gals, n_noise_per_signal)
+        phase_samples = tf.random.uniform(
+            shape=(
+                n_gals,
+                n_noise_per_signal,
+            ),
+            minval=0,
+            maxval=2 * np.pi,
+        )
+
+        g1_samples = tf.math.cos(phase_samples) * tf.expand_dims(gamma_abs, axis=1)
+        g2_samples = tf.math.sin(phase_samples) * tf.expand_dims(gamma_abs, axis=1)
+        w_samples = tf.expand_dims(w, axis=1)
+
+        weighted_g1 = g1_samples * w_samples
+        weighted_g2 = g2_samples * w_samples
+
+        sum_g1 = tf.math.unsorted_segment_sum(weighted_g1, pix, num_segments=n_pix)
+        sum_g2 = tf.math.unsorted_segment_sum(weighted_g2, pix, num_segments=n_pix)
+        sum_w = tf.math.unsorted_segment_sum(w_samples, pix, num_segments=n_pix)
+
+        gamma1_per_pix = tf.math.divide_no_nan(sum_g1, sum_w)
+        gamma2_per_pix = tf.math.divide_no_nan(sum_g2, sum_w)
+
+        gamma1_patch = tf.gather(gamma1_per_pix, base_patch_pix)
+        gamma2_patch = tf.gather(gamma2_per_pix, base_patch_pix)
+
+    return gamma1_patch.numpy(), gamma2_patch.numpy()

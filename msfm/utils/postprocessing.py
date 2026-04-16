@@ -354,6 +354,8 @@ def postprocess_shape_noise(delta_full_sky, conf, simset, pixel_file, noise_file
     gamma_cat = tomo_gamma_cat[i_z]
 
     # metacal clustering
+    source_clustering = conf["analysis"]["modelling"]["lensing"]["source_clustering"]
+
     tomo_bias = files.read_metacal_bias(bgs_key, conf)
     bias = tomo_bias[i_z]
 
@@ -369,22 +371,32 @@ def postprocess_shape_noise(delta_full_sky, conf, simset, pixel_file, noise_file
     # create joint distribution, as this is faster than random indexing
     gamma_abs = tf.math.abs(gamma_cat[:, 0] + 1j * gamma_cat[:, 1])
     w = gamma_cat[:, 2]
-    cat_dist = tfp.distributions.Empirical(samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1)
 
-    # normalize to number density contrast
-    delta_full_sky = (delta_full_sky - np.mean(delta_full_sky)) / np.mean(delta_full_sky)
+    if source_clustering:
+        cat_dist = tfp.distributions.Empirical(samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1)
 
-    # number of galaxies per pixel
-    counts_full = clustering.galaxy_density_to_count(n_bar, delta_full_sky, bias, systematics_map=None).astype(int)
-    counts_full = np.random.poisson(counts_full).astype(int)
+        # normalize to number density contrast
+        delta_full_sky = (delta_full_sky - np.mean(delta_full_sky)) / np.mean(delta_full_sky)
+
+        # number of galaxies per pixel
+        counts_full = clustering.galaxy_density_to_count(n_bar, delta_full_sky, bias, systematics_map=None).astype(int)
+        counts_full = np.random.poisson(counts_full).astype(int)
+    else:
+        LOGGER.warning("Rotating galaxies in place for shape noise")
+        pix_cat = gamma_cat[:, 3]
 
     kappa_dvs = np.zeros((n_patches, n_noise_per_signal, data_vec_len), dtype=np.float32)
     for i_patch, patch_pix in enumerate(patches_pix):
-        # not a full healpy map, just the patch with no zeros
-        counts = counts_full[patch_pix]
+        if source_clustering:
+            # not a full healpy map, just the patch with no zeros
+            counts = counts_full[patch_pix]
 
-        # vectorized sampling, shape (len(counts), n_noise_per_signal)
-        gamma1, gamma2 = lensing.noise_gen(counts, cat_dist, n_noise_per_signal)
+            # vectorized sampling, shape (len(counts), n_noise_per_signal)
+            gamma1, gamma2 = lensing.noise_gen(counts, cat_dist, n_noise_per_signal)
+        else:
+            gamma1, gamma2 = lensing.noise_gen_in_place(
+                gamma_abs, w, pix_cat, base_patch_pix, n_pix, n_noise_per_signal
+            )
 
         # not vectorized because of the healpy alm transform
         for i_noise in range(n_noise_per_signal):

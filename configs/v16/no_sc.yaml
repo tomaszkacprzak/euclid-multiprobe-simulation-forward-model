@@ -90,12 +90,12 @@ analysis:
       theta_fwhm: Null
   modelling:
     baryonified: True
-    store_cross_maps: True
+    store_cross_maps: False
     # degrade the maps to Gaussian Random Fields for testing and comparison to the power spectra
     degrade_to_grf: False
     lensing:
       store: True
-      source_clustering: True
+      source_clustering: False
       # whether to include the TATT cross-term on top of NLA
       extended_nla: True
       nla:
@@ -103,7 +103,7 @@ analysis:
         z_min_quantile: 0.05
         z_max_quantile: 0.95
     clustering:
-      store: True
+      store: False
       power_law_biasing: False
       per_bin_biasing: True
       # in addition to linear biasing

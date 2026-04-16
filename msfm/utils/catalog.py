@@ -233,6 +233,7 @@ def build_maglim_map_from_cat(conf, debug=True, force_recompute=False):
 def get_shapes_from_cat(conf):
     conf = files.load_config(conf)
 
+    n_side = conf["analysis"]["n_side"]
     R_gamma = conf["survey"]["metacal"]["R_gamma"]
     R_s = conf["survey"]["metacal"]["R_s"]
 
@@ -240,14 +241,22 @@ def get_shapes_from_cat(conf):
 
     metacal = h5py.File(f"{cat_dir}/DESY3_metacal_v03-004.h5", "r")
     index = h5py.File(f"{cat_dir}/DESY3_indexcat.h5", "r")
+    gold = h5py.File(f"{cat_dir}/DESY3_GOLD_2_2.1.h5", "r")
 
     n_z = len(conf["survey"]["metacal"]["z_bins"])
     gamma_1 = []
     gamma_2 = []
     weight = []
+    pixels = []
     for i in range(n_z):
         metacal_bin = index[f"/index/select_bin{i+1}"][:]
         LOGGER.info(f"Metacalibration bin {i+1}: N_gal = {len(metacal_bin)}")
+
+        # positions
+        dec = gold["/catalog/gold/dec"][:][metacal_bin]
+        ra = gold["/catalog/gold/ra"][:][metacal_bin]
+
+        pix = survey_angles_to_pix(conf, ra, dec, n_side)
 
         # properties
         e1 = metacal["/catalog/unsheared/e_1"][:][metacal_bin]
@@ -259,8 +268,10 @@ def get_shapes_from_cat(conf):
         gamma_1.append(e1 / (R_gamma[i] + R_s[i]))
         gamma_2.append(e2 / (R_gamma[i] + R_s[i]))
         weight.append(w)
+        pixels.append(pix)
 
     metacal.close()
     index.close()
+    gold.close()
 
-    return gamma_1, gamma_2, weight
+    return gamma_1, gamma_2, weight, pixels
