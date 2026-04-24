@@ -44,6 +44,11 @@ def get_parameters(params=None, conf=None):
         params += conf["analysis"]["params"]["bg"]["linear"]
         if conf["analysis"]["modelling"]["clustering"]["quadratic_biasing"]:
             params += conf["analysis"]["params"]["bg"]["quadratic"]
+        try:
+            if conf["analysis"]["modelling"]["lensing"]["source_clustering"] == "prior":
+                params += conf["analysis"]["params"]["sc"]
+        except KeyError:
+            pass
 
     return params
 
@@ -165,10 +170,18 @@ def get_tomo_amplitude_perturbations_dict(param, conf=None):
 
     tomo_amplitude_perturbations_dict = {
         "fiducial": redshift.get_tomo_amplitudes_according_to_config(conf, amplitude, exponent, sample),
-        f"delta_{param}_m": redshift.get_tomo_amplitudes_according_to_config(conf, amplitude - delta_amplitude, exponent, sample),
-        f"delta_{param}_p": redshift.get_tomo_amplitudes_according_to_config(conf, amplitude + delta_amplitude, exponent, sample),
-        f"delta_n_{param}_m": redshift.get_tomo_amplitudes_according_to_config(conf, amplitude, exponent - delta_exponent, sample),
-        f"delta_n_{param}_p": redshift.get_tomo_amplitudes_according_to_config(conf, amplitude, exponent + delta_exponent, sample),
+        f"delta_{param}_m": redshift.get_tomo_amplitudes_according_to_config(
+            conf, amplitude - delta_amplitude, exponent, sample
+        ),
+        f"delta_{param}_p": redshift.get_tomo_amplitudes_according_to_config(
+            conf, amplitude + delta_amplitude, exponent, sample
+        ),
+        f"delta_n_{param}_m": redshift.get_tomo_amplitudes_according_to_config(
+            conf, amplitude, exponent - delta_exponent, sample
+        ),
+        f"delta_n_{param}_p": redshift.get_tomo_amplitudes_according_to_config(
+            conf, amplitude, exponent + delta_exponent, sample
+        ),
     }
 
     return tomo_amplitude_perturbations_dict

@@ -324,19 +324,29 @@ def forward_model_cosmogrid(
                 wl_kappa_map *= 1.0 + m_bias
 
             if noisy:
-                if tomo_bg_metacal is not None:
-                    LOGGER.info(f"Using tomo_bg_metacal={tomo_bg_metacal} from the function call")
-                elif i_sobol is not None:
-                    tomo_bg_metacal = files.read_metacal_bias(f"cosmo_{i_sobol:06}", conf=conf)
-                    LOGGER.info(f"Using tomo_bg_metacal={tomo_bg_metacal} from the Sobol index {i_sobol}")
-                else:
-                    raise ValueError("Either tomo_bg_metacal or i_sobol must be provided to generate the shape noise")
+                sc_mode = conf["analysis"]["modelling"]["lensing"]["source_clustering"]
 
-                tomo_n_gal = np.array(conf["survey"]["metacal"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
-                dg = (dg - np.mean(dg, axis=0)) / np.mean(dg, axis=0)
-                counts_map = clustering.galaxy_density_to_count(
-                    tomo_n_gal, dg, tomo_bg_metacal, systematics_map=None
-                ).astype(int)
+                if tomo_bg_metacal is not None:
+                    LOGGER.info(f"Using tomo_bg_metacal={tomo_bg_metacal} from the function call, setting source_clustering to 'fixed'")
+                    sc_mode = "fixed"
+
+                if sc_mode in ["fixed", "prior"]:
+                    if tomo_bg_metacal is None:
+                        if i_sobol is not None:
+                            tomo_bg_metacal = files.read_metacal_bias(f"cosmo_{i_sobol:06}", conf=conf)
+                            LOGGER.info(f"Using tomo_bg_metacal={tomo_bg_metacal} from the Sobol index {i_sobol}")
+                        else:
+                            raise ValueError("Either tomo_bg_metacal or i_sobol must be provided to generate the shape noise for fixed source clustering")
+
+                    tomo_n_gal = np.array(conf["survey"]["metacal"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+                    dg = (dg - np.mean(dg, axis=0)) / np.mean(dg, axis=0)
+                    counts_map = clustering.galaxy_density_to_count(
+                        tomo_n_gal, dg, tomo_bg_metacal, systematics_map=None
+                    ).astype(int)
+                elif sc_mode == "rotate":
+                    LOGGER.info("Rotating galaxies in place for shape noise")
+                else:
+                    raise ValueError(f"Unknown source clustering mode {sc_mode}")
 
                 tomo_gamma_cat = files.load_noise_file(conf)
 
@@ -371,18 +381,28 @@ def forward_model_cosmogrid(
                     tf.random.set_seed(noise_seed)
 
                     with tf.device("/CPU:0"):
-                        counts = counts_map[cutout_patch_pix, i_z]
+                        gamma_cat = tomo_gamma_cat[i_z]
+                        gamma_abs = tf.math.abs(gamma_cat[:, 0] + 1j * gamma_cat[:, 1])
+                        w = gamma_cat[:, 2]
 
-                        # create joint distribution, as this is faster than random indexing
-                        gamma_abs = tf.math.abs(tomo_gamma_cat[i_z][:, 0] + 1j * tomo_gamma_cat[i_z][:, 1])
-                        w = tomo_gamma_cat[i_z][:, 2]
-                        cat_dist = tfp.distributions.Empirical(
-                            samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1
-                        )
+                        if sc_mode in ["fixed", "prior"]:
+                            counts = counts_map[cutout_patch_pix, i_z]
 
-                        gamma1_noise, gamma2_noise = lensing.noise_gen(counts, cat_dist, n_noise_per_signal=1)
-                        gamma1_noise = gamma1_noise[:, 0]
-                        gamma2_noise = gamma2_noise[:, 0]
+                            # create joint distribution, as this is faster than random indexing
+                            cat_dist = tfp.distributions.Empirical(
+                                samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1
+                            )
+
+                            gamma1_noise, gamma2_noise = lensing.noise_gen(counts, cat_dist, n_noise_per_signal=1)
+                            gamma1_noise = gamma1_noise[:, 0]
+                            gamma2_noise = gamma2_noise[:, 0]
+                        else:
+                            pix_cat = gamma_cat[:, 3]
+                            gamma1_noise, gamma2_noise = lensing.noise_gen_in_place(
+                                gamma_abs, w, pix_cat, patch_pix, n_pix, n_noise_per_signal=1
+                            )
+                            gamma1_noise = gamma1_noise[:, 0]
+                            gamma2_noise = gamma2_noise[:, 0]
                 else:
                     gamma1_noise = 0
                     gamma2_noise = 0

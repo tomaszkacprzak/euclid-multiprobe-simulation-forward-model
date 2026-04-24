@@ -112,6 +112,7 @@ analysis:
     degrade_to_grf: False
     store_cross_maps: False
     lensing:
+      store: True
       # whether to include the TATT cross-term on top of NLA
       extended_nla: True
       nla:
@@ -119,6 +120,7 @@ analysis:
         z_min_quantile: 0.05
         z_max_quantile: 0.95
     clustering:
+      store: True
       power_law_biasing: False
       per_bin_biasing: True
       # linear + quadratic galaxy biasing or just linear

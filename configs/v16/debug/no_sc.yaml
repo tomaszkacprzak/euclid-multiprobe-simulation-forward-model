@@ -36,15 +36,15 @@ survey:
     R_s: [0.0046, 0.0083, 0.0126, 0.0145]
   maglim:
     map_types:
-      input: [dg]
-      output: [dg]
+      input: []
+      output: []
+      # input: [dg]
+      # output: [dg]
     z_bins: [maglim1, maglim2, maglim3, maglim4]
     # used in the forward model (in galaxies/deg^2, computed in notebooks/config.ipynb to respect masking)
     n_gal: [492.807, 351.951, 358.012, 477.993]
     # used to build the observation, from Table 1 in https://arxiv.org/pdf/2105.13546
     z_lims: [[0.2, 0.4], [0.4, 0.55], [0.55, 0.70], [0.70, 0.85]]
-    # for power law biasing
-    z0: 0.62
   # from Table 1 in https://arxiv.org/pdf/2105.13543
   Aeff: 4143
 
@@ -66,7 +66,8 @@ analysis:
       tatt: [bta]
     # galaxy biasing
     bg:
-      linear: [bg, n_bg]
+      linear: [bg1, bg2, bg3, bg4]
+      quadratic: [bg1_q, bg2_q, bg3_q, bg4_q]
       stochasticity: [rg]
   footprint:
     # the original DES footprint is first rotated around the y- and then the z-axis to enable the cut-outs
@@ -91,21 +92,22 @@ analysis:
       theta_fwhm: Null
   modelling:
     baryonified: True
-    store_cross_maps: True
+    store_cross_maps: False
     # degrade the maps to Gaussian Random Fields for testing and comparison to the power spectra
     degrade_to_grf: False
     lensing:
       store: True
+      source_clustering: rotate
       # whether to include the TATT cross-term on top of NLA
-      extended_nla: False
+      extended_nla: True
       nla:
         truncate_nz: True
         z_min_quantile: 0.05
         z_max_quantile: 0.95
     clustering:
-      store: True
-      power_law_biasing: True
-      per_bin_biasing: False
+      store: False
+      power_law_biasing: False
+      per_bin_biasing: True
       # in addition to linear biasing
       quadratic_biasing: False
       # whether to include a stochasticity in the galaxy biasing. This scales the [-pi, pi] interval from which the
@@ -124,8 +126,8 @@ analysis:
   grid:
     # CosmoGrid
     n_cosmos: 2500
-    n_perms_per_cosmo: 20
-    n_noise_per_signal: 5
+    n_perms_per_cosmo: 2
+    n_noise_per_signal: 1
     priors:
       # from Table 1 in https://arxiv.org/pdf/2201.07771
       Om: [0.1, 0.5]
@@ -143,8 +145,10 @@ analysis:
       n_Aia: [-4.0, 6.0]
       bta: [0.0, 2.0]
       # galaxy clustering
-      bg: [0.8, 3.0]
-      n_bg: [-3.0, 3.0]
+      bg1: [0.8, 3.0]
+      bg2: [0.8, 3.0]
+      bg3: [0.8, 3.0]
+      bg4: [0.8, 3.0]
       rg: [0.6, 1.0]
       Om_s8_border_points:
         [
@@ -175,9 +179,11 @@ analysis:
     Aia: 0.5
     n_Aia: 1.5
     bta: 0.0
-    # galaxy clustering
-    bg: 1.5
-    n_bg: 0.5
+    # galaxy clustering (corresponds to bg=1.5, n_bg=0.5)
+    bg1: 1.3433586
+    bg2: 1.4218498
+    bg3: 1.4996815
+    bg4: 1.5668583
     rg: 0.8
     perturbations:
       Om: 0.01
@@ -190,5 +196,7 @@ analysis:
       bary_nu: 0.1
       Aia: 0.1
       n_Aia: 0.2
-      bg: 0.1
-      n_bg: 0.2
+      bg1: 0.1
+      bg2: 0.1
+      bg3: 0.1
+      bg4: 0.1

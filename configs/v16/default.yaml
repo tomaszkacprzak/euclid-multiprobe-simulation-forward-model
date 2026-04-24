@@ -95,7 +95,7 @@ analysis:
     degrade_to_grf: False
     lensing:
       store: True
-      source_clustering: True
+      source_clustering: fixed
       # whether to include the TATT cross-term on top of NLA
       extended_nla: True
       nla:

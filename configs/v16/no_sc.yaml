@@ -18,31 +18,31 @@ survey:
   name: DESy3
   metacal:
     map_types:
-      input: [kg, ia, dg, dg]
-      output: [kg, ia, sn, ds]
-    z_bins: [metacal1, metacal2, metacal3, metacal4]
+      input: [ kg, ia, dg, dg ]
+      output: [ kg, ia, sn, ds ]
+    z_bins: [ metacal1, metacal2, metacal3, metacal4 ]
     # used in the forward model (in galaxies/deg^2, computed in notebooks/config.ipynb to respect masking)
-    n_gal: [5505.792, 5585.636, 5498.44, 5578.685]
+    n_gal: [ 5505.792, 5585.636, 5498.44, 5578.685 ]
     # from Table 1 in https://arxiv.org/pdf/2105.13544
     shear_bias:
       multiplicative:
-        mu: [-0.0063, -0.0198, -0.0241, -0.0369]
-        sigma: [0.0091, 0.0078, 0.0076, 0.0076]
+        mu: [ -0.0063, -0.0198, -0.0241, -0.0369 ]
+        sigma: [ 0.0091, 0.0078, 0.0076, 0.0076 ]
     # pivot redshift from https://arxiv.org/pdf/2105.13543
     z0: 0.62
     # used to build the observation like eq. (10) in https://arxiv.org/pdf/2403.02314 and shape noise file
     # from Table 1 in https://arxiv.org/pdf/2105.13543
-    R_gamma: [0.7636, 0.7182, 0.6887, 0.6154]
-    R_s: [0.0046, 0.0083, 0.0126, 0.0145]
+    R_gamma: [ 0.7636, 0.7182, 0.6887, 0.6154 ]
+    R_s: [ 0.0046, 0.0083, 0.0126, 0.0145 ]
   maglim:
     map_types:
-      input: [dg]
-      output: [dg]
-    z_bins: [maglim1, maglim2, maglim3, maglim4]
+      input: [ dg ]
+      output: [ dg ]
+    z_bins: [ maglim1, maglim2, maglim3, maglim4 ]
     # used in the forward model (in galaxies/deg^2, computed in notebooks/config.ipynb to respect masking)
-    n_gal: [492.807, 351.951, 358.012, 477.993]
+    n_gal: [ 492.807, 351.951, 358.012, 477.993 ]
     # used to build the observation, from Table 1 in https://arxiv.org/pdf/2105.13546
-    z_lims: [[0.2, 0.4], [0.4, 0.55], [0.55, 0.70], [0.70, 0.85]]
+    z_lims: [ [ 0.2, 0.4 ], [ 0.4, 0.55 ], [ 0.55, 0.70 ], [ 0.70, 0.85 ] ]
   # from Table 1 in https://arxiv.org/pdf/2105.13543
   Aeff: 4143
 
@@ -56,17 +56,17 @@ analysis:
   # the six cosmological parameters of the CosmoGrid have to be listed first
   params:
     # same ordering as in the CosmoGrid
-    cosmo: [Om, s8, Ob, H0, ns, w0]
-    bary: [bary_Mc, bary_nu]
+    cosmo: [ Om, s8, Ob, H0, ns, w0 ]
+    bary: [ bary_Mc, bary_nu ]
     # NLA model + first term of TATT (cross term)
     ia:
-      nla: [Aia, n_Aia]
-      tatt: [bta]
+      nla: [ Aia, n_Aia ]
+      tatt: [ bta ]
     # galaxy biasing
     bg:
-      linear: [bg1, bg2, bg3, bg4]
-      quadratic: [bg1_q, bg2_q, bg3_q, bg4_q]
-      stochasticity: [rg]
+      linear: [ bg1, bg2, bg3, bg4 ]
+      quadratic: [ bg1_q, bg2_q, bg3_q, bg4_q ]
+      stochasticity: [ rg ]
   footprint:
     # the original DES footprint is first rotated around the y- and then the z-axis to enable the cut-outs
     rotation:
@@ -78,13 +78,13 @@ analysis:
     hard_cut: True
     lensing:
       # from 6.1 in https://arxiv.org/pdf/2110.10135
-      l_min: [30, 30, 30, 30]
+      l_min: [ 30, 30, 30, 30 ]
       # healpy default of 3 * n_side - 1, since smoothing is done on the fly
       l_max: Null
       theta_fwhm: Null
     clustering:
       # from 6.1 in https://arxiv.org/pdf/2110.10135
-      l_min: [30, 30, 30, 30]
+      l_min: [ 30, 30, 30, 30 ]
       # healpy default of 3 * n_side - 1, since smoothing is done on the fly
       l_max: Null
       theta_fwhm: Null
@@ -95,7 +95,7 @@ analysis:
     degrade_to_grf: False
     lensing:
       store: True
-      source_clustering: False
+      source_clustering: rotate
       # whether to include the TATT cross-term on top of NLA
       extended_nla: True
       nla:
@@ -115,8 +115,8 @@ analysis:
       maglim_survey_systematics_map: False
   normalization:
     # approximate per tomo bin standard deviation of the kg + ia + sn maps at the fiducial cosmology
-    lensing: [0.0086, 0.0137, 0.0174, 0.0229]
-    clustering: [1, 1, 1, 1]
+    lensing: [ 0.0086, 0.0137, 0.0174, 0.0229 ]
+    clustering: [ 1, 1, 1, 1 ]
   power_spectra:
     l_min: 30
     l_max: 1500
@@ -128,34 +128,34 @@ analysis:
     n_noise_per_signal: 5
     priors:
       # from Table 1 in https://arxiv.org/pdf/2201.07771
-      Om: [0.1, 0.5]
-      s8: [0.4, 1.4]
-      S8: [0.23094010767585035, 1.8073922282301278]
-      H0: [64, 82]
-      Ob: [0.03, 0.06]
-      ns: [0.87, 1.07]
-      w0: [-2.0, -0.333]
+      Om: [ 0.1, 0.5 ]
+      s8: [ 0.4, 1.4 ]
+      S8: [ 0.23094010767585035, 1.8073922282301278 ]
+      H0: [ 64, 82 ]
+      Ob: [ 0.03, 0.06 ]
+      ns: [ 0.87, 1.07 ]
+      w0: [ -2, -0.333 ]
       # baryons
-      bary_Mc: [12.0, 15.0]
-      bary_nu: [-2.0, 2.0]
+      bary_Mc: [ 12.0, 15.0 ]
+      bary_nu: [ -2, 2.0 ]
       # intrinsic alignment
-      Aia: [-3.0, 3.0]
-      n_Aia: [-4.0, 6.0]
-      bta: [0.0, 2.0]
+      Aia: [ -3, 3.0 ]
+      n_Aia: [ -4, 6.0 ]
+      bta: [ 0.0, 2.0 ]
       # galaxy clustering
-      bg1: [0.8, 3.0]
-      bg2: [0.8, 3.0]
-      bg3: [0.8, 3.0]
-      bg4: [0.8, 3.0]
-      rg: [0.6, 1.0]
+      bg1: [ 0.8, 3.0 ]
+      bg2: [ 0.8, 3.0 ]
+      bg3: [ 0.8, 3.0 ]
+      bg4: [ 0.8, 3.0 ]
+      rg: [ 0.6, 1.0 ]
       Om_s8_border_points:
         [
-          [0.1, 1.4],
-          [0.2, 1.4],
-          [0.5, 0.65],
-          [0.5, 0.4],
-          [0.3, 0.4],
-          [0.1, 0.9],
+          [ 0.1, 1.4 ],
+          [ 0.2, 1.4 ],
+          [ 0.5, 0.65 ],
+          [ 0.5, 0.4 ],
+          [ 0.3, 0.4 ],
+          [ 0.1, 0.9 ],
         ]
   fiducial:
     # CosmoGrid
@@ -169,7 +169,7 @@ analysis:
     H0: 67.36
     Ob: 0.0493
     ns: 0.9649
-    w0: -1.0
+    w0: -1
     # baryons
     bary_Mc: 13.82
     bary_nu: 0.0

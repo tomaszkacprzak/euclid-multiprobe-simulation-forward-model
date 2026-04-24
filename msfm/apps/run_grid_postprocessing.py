@@ -231,6 +231,8 @@ def main(indices, args):
     astro_params += conf["analysis"]["params"]["bg"]["linear"]
     if quadratic_biasing:
         astro_params += conf["analysis"]["params"]["bg"]["quadratic"]
+    if conf["analysis"]["modelling"]["lensing"]["source_clustering"] == "prior":
+        astro_params += conf["analysis"]["params"]["sc"]
     LOGGER.info(f"Sampling the astrophysical parameters {astro_params} from a Latin hypercube")
 
     astro_priors = parameters.get_prior_intervals(astro_params, conf=conf)
@@ -298,6 +300,20 @@ def main(indices, args):
                 LOGGER.debug(f"Taking inputs from {cosmo_dir_in}")
 
                 state_file = os.path.join(args.dir_out, f"program_state{i_cosmo:06}" + args.file_suffix + ".pkl")
+
+                i_sobol, cosmo = _extend_sobol_squence(conf, cosmo_params_info, i_cosmo)
+
+                latin_sampler = qmc.LatinHypercube(d=len(astro_params), seed=i_cosmo)
+                unscaled_samples = latin_sampler.random(n_examples_per_cosmo // n_noise_per_signal)
+                astro_samples = qmc.scale(unscaled_samples, l_bounds=astro_priors[:, 0], u_bounds=astro_priors[:, 1])
+                astro_samples = astro_samples.astype(np.float32)
+
+                bsc_samples = (
+                    astro_samples[:, -1]
+                    if conf["analysis"]["modelling"]["lensing"]["source_clustering"] == "prior"
+                    else None
+                )
+
                 if args.debug and os.path.exists(state_file):
                     with open(state_file, "rb") as f:
                         state = pickle.load(f)
@@ -306,7 +322,7 @@ def main(indices, args):
                 else:
                     # cut out the survey footprints, generate the shape noise, perform mode removal, ...
                     data_vec_container = postprocessing.postprocess_grid_permutations(
-                        args, conf, cosmo_dir_in, pixel_file, noise_file
+                        args, conf, cosmo_dir_in, pixel_file, noise_file, bsc_samples=bsc_samples
                     )
 
                     if args.debug:
@@ -334,13 +350,6 @@ def main(indices, args):
                 # (n_examples_per_cosmo, n_noise_per_signaln_pix, n_z_bins)
                 sn_examples = data_vec_container["sn"] if store_lensing else [None] * n_examples_per_cosmo
 
-                i_sobol, cosmo = _extend_sobol_squence(conf, cosmo_params_info, i_cosmo)
-
-                latin_sampler = qmc.LatinHypercube(d=len(astro_params), seed=i_cosmo)
-                unscaled_samples = latin_sampler.random(n_examples_per_cosmo)
-                astro_samples = qmc.scale(unscaled_samples, l_bounds=astro_priors[:, 0], u_bounds=astro_priors[:, 1])
-                astro_samples = astro_samples.astype(np.float32)
-
                 # loop over the n_examples_per_cosmo
                 for i_signal, (kg, ia, ds, sn_samples, dg, qdg) in LOGGER.progressbar(
                     enumerate(zip(kg_examples, ia_examples, ds_examples, sn_examples, dg_examples, qdg_examples)),
@@ -354,6 +363,10 @@ def main(indices, args):
 
                     astro_sample = astro_samples[i_signal]
                     cosmo_sample = np.concatenate([cosmo, astro_sample])
+
+                    # to keep the indexing identical
+                    if conf["analysis"]["modelling"]["lensing"]["source_clustering"] == "prior":
+                        astro_sample = astro_sample[:-1]
 
                     # lensing
                     if extended_nla:

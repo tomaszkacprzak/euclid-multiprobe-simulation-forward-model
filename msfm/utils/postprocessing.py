@@ -129,7 +129,7 @@ def _set_up_per_example_dv_container(conf, pixel_file, is_fiducial):
 # grid ################################################################################################################
 
 
-def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_file):
+def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_file, bsc_samples=None):
     # hard-coded with respect to the filenames
     i_sobol = int(cosmo_dir_in[-7:-1])
     n_patches = conf["analysis"]["n_patches"]
@@ -183,6 +183,8 @@ def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_fi
                             noise_file,
                             full_maps_file,
                             bgs_key=f"cosmo_{i_sobol:06d}",
+                            i_perm=i_perm,
+                            bsc_samples=bsc_samples,
                         )
                     elif sample == "maglim":
                         data_vecs = postprocess_maglim_bin(
@@ -244,14 +246,27 @@ def _set_up_per_cosmo_dv_container(conf, pixel_file):
 
 
 def postprocess_metacal_bin(
-    conf, full_sky_map, in_map_type, out_map_type, i_z, simset, pixel_file, noise_file, full_maps_file, bgs_key
+    conf,
+    full_sky_map,
+    in_map_type,
+    out_map_type,
+    i_z,
+    simset,
+    pixel_file,
+    noise_file,
+    full_maps_file,
+    bgs_key,
+    i_perm=None,
+    bsc_samples=None,
 ):
     if in_map_type in ["kg", "ia"]:
         # shape (n_patches, data_vec_len)
         kappa_dvs = postprocess_lensing(full_sky_map, conf, pixel_file, i_z)
     elif in_map_type == "dg" and out_map_type == "sn":
         # shape (n_patches, n_noise_per_signal, data_vec_len)
-        kappa_dvs = postprocess_shape_noise(full_sky_map, conf, simset, pixel_file, noise_file, i_z, bgs_key)
+        kappa_dvs = postprocess_shape_noise(
+            full_sky_map, conf, simset, pixel_file, noise_file, i_z, bgs_key, i_perm, bsc_samples
+        )
     elif in_map_type == "dg" and out_map_type == "ds":
         full_sky_ia = _read_full_sky_bin(conf, full_maps_file, "ia", conf["survey"]["metacal"]["z_bins"][i_z])
         full_sky_ds = (full_sky_ia - np.mean(full_sky_ia)) * (
@@ -336,7 +351,9 @@ def postprocess_lensing(kappa_full_sky, conf, pixel_file, i_z):
     return kappa_dvs
 
 
-def postprocess_shape_noise(delta_full_sky, conf, simset, pixel_file, noise_file, i_z, bgs_key):
+def postprocess_shape_noise(
+    delta_full_sky, conf, simset, pixel_file, noise_file, i_z, bgs_key, i_perm=None, bsc_samples=None
+):
     n_side = conf["analysis"]["n_side"]
     n_pix = conf["analysis"]["n_pix"]
     n_patches = conf["analysis"]["n_patches"]
@@ -354,10 +371,17 @@ def postprocess_shape_noise(delta_full_sky, conf, simset, pixel_file, noise_file
     gamma_cat = tomo_gamma_cat[i_z]
 
     # metacal clustering
-    source_clustering = conf["analysis"]["modelling"]["lensing"]["source_clustering"]
+    sc_mode = conf["analysis"]["modelling"]["lensing"]["source_clustering"]
 
-    tomo_bias = files.read_metacal_bias(bgs_key, conf)
-    bias = tomo_bias[i_z]
+    if sc_mode == "fixed":
+        tomo_bias = files.read_metacal_bias(bgs_key, conf)
+        bias = tomo_bias[i_z]
+    elif sc_mode == "prior":
+        bias = None  # will be sampled per patch
+    elif sc_mode == "rotate":
+        bias = None
+    else:
+        raise ValueError(f"Unknown source clustering mode {sc_mode}")
 
     tomo_n_gal = np.array(conf["survey"]["metacal"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
     n_bar = tomo_n_gal[i_z]
@@ -372,24 +396,34 @@ def postprocess_shape_noise(delta_full_sky, conf, simset, pixel_file, noise_file
     gamma_abs = tf.math.abs(gamma_cat[:, 0] + 1j * gamma_cat[:, 1])
     w = gamma_cat[:, 2]
 
-    if source_clustering:
+    if sc_mode in ["fixed", "prior"]:
         cat_dist = tfp.distributions.Empirical(samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1)
 
         # normalize to number density contrast
-        delta_full_sky = (delta_full_sky - np.mean(delta_full_sky)) / np.mean(delta_full_sky)
+        delta_full_sky_norm = (delta_full_sky - np.mean(delta_full_sky)) / np.mean(delta_full_sky)
 
-        # number of galaxies per pixel
-        counts_full = clustering.galaxy_density_to_count(n_bar, delta_full_sky, bias, systematics_map=None).astype(int)
-        counts_full = np.random.poisson(counts_full).astype(int)
+        if sc_mode == "fixed":
+            counts_full = clustering.galaxy_density_to_count(
+                n_bar, delta_full_sky_norm, bias, systematics_map=None
+            ).astype(int)
+            counts_full = np.random.poisson(counts_full).astype(int)
     else:
         LOGGER.warning("Rotating galaxies in place for shape noise")
         pix_cat = gamma_cat[:, 3]
 
     kappa_dvs = np.zeros((n_patches, n_noise_per_signal, data_vec_len), dtype=np.float32)
     for i_patch, patch_pix in enumerate(patches_pix):
-        if source_clustering:
-            # not a full healpy map, just the patch with no zeros
-            counts = counts_full[patch_pix]
+        if sc_mode in ["fixed", "prior"]:
+            if sc_mode == "prior" and bsc_samples is not None:
+                bias_patch = bsc_samples[(i_perm * n_patches) + i_patch]
+                delta_patch = delta_full_sky_norm[patch_pix]
+                counts_patch = clustering.galaxy_density_to_count(
+                    n_bar, delta_patch, bias_patch, systematics_map=None
+                ).astype(int)
+                counts_patch = np.random.poisson(counts_patch).astype(int)
+                counts = counts_patch
+            else:
+                counts = counts_full[patch_pix]
 
             # vectorized sampling, shape (len(counts), n_noise_per_signal)
             gamma1, gamma2 = lensing.noise_gen(counts, cat_dist, n_noise_per_signal)
