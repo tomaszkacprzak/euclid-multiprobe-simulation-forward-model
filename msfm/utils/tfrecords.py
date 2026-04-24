@@ -476,8 +476,8 @@ def parse_inverse_fiducial(
     output_data = {}
 
     bin_indices, _ = cross_statistics.get_cross_bin_indices(
-        _parse_none_value(serialized_data, "n_z_metacal", n_z_metacal),
-        _parse_none_value(serialized_data, "n_z_maglim", n_z_maglim),
+        _parse_none_value(serialized_data, "n_z_metacal", n_z_metacal) if with_lensing else 0,
+        _parse_none_value(serialized_data, "n_z_maglim", n_z_maglim) if with_clustering else 0,
         with_lensing,
         with_clustering,
         with_cross_z=True,

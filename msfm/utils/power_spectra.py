@@ -144,7 +144,7 @@ def smooth_and_bin_cls(
     ell = np.arange(n_ell)
 
     if with_cross:
-        assert n_cross_z == n_z * (n_z + 1) // 2
+        assert n_cross_z == n_z * (n_z + 1) // 2, f"Oops: {n_cross_z} != {n_z} * ({n_z} + 1) // 2"
     else:
         assert n_cross_z == n_z
 
@@ -273,23 +273,35 @@ def get_l_limits(conf):
     l_min_clustering = conf["analysis"]["scale_cuts"]["clustering"]["l_min"]
     l_max_lensing = conf["analysis"]["scale_cuts"]["lensing"]["l_max"]
     l_max_clustering = conf["analysis"]["scale_cuts"]["clustering"]["l_max"]
-    n_z = len(conf["survey"]["metacal"]["z_bins"]) + len(conf["survey"]["maglim"]["z_bins"])
 
-    if l_min_lensing is not None and l_min_clustering is not None:
-        l_mins = l_min_lensing + l_min_clustering
-    else:
-        l_mins = [None] * n_z
+    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
 
-    if l_max_lensing is not None and l_max_clustering is not None:
-        l_maxs = l_max_lensing + l_max_clustering
-    else:
-        l_maxs = [None] * n_z
+    l_mins = []
+    if store_lensing:
+        l_mins += l_min_lensing if l_min_lensing is not None else [None] * len(conf["survey"]["metacal"]["z_bins"])
+    if store_clustering:
+        l_mins += (
+            l_min_clustering if l_min_clustering is not None else [None] * len(conf["survey"]["maglim"]["z_bins"])
+        )
+
+    l_maxs = []
+    if store_lensing:
+        l_maxs += l_max_lensing if l_max_lensing is not None else [None] * len(conf["survey"]["metacal"]["z_bins"])
+    if store_clustering:
+        l_maxs += (
+            l_max_clustering if l_max_clustering is not None else [None] * len(conf["survey"]["maglim"]["z_bins"])
+        )
 
     return l_mins, l_maxs
 
 
 def bin_according_to_config(cls, conf):
-    n_z = len(conf["survey"]["metacal"]["z_bins"]) + len(conf["survey"]["maglim"]["z_bins"])
+    n_z = 0
+    if conf["analysis"]["modelling"]["lensing"]["store"]:
+        n_z += len(conf["survey"]["metacal"]["z_bins"])
+    if conf["analysis"]["modelling"]["clustering"]["store"]:
+        n_z += len(conf["survey"]["maglim"]["z_bins"])
 
     binned_cls, bin_edges = smooth_and_bin_cls(
         cls,
