@@ -327,7 +327,9 @@ def forward_model_cosmogrid(
                 sc_mode = conf["analysis"]["modelling"]["lensing"]["source_clustering"]
 
                 if tomo_bg_metacal is not None:
-                    LOGGER.info(f"Using tomo_bg_metacal={tomo_bg_metacal} from the function call, setting source_clustering to 'fixed'")
+                    LOGGER.info(
+                        f"Using tomo_bg_metacal={tomo_bg_metacal} from the function call, setting source_clustering to 'fixed'"
+                    )
                     sc_mode = "fixed"
 
                 if sc_mode in ["fixed", "prior"]:
@@ -336,7 +338,9 @@ def forward_model_cosmogrid(
                             tomo_bg_metacal = files.read_metacal_bias(f"cosmo_{i_sobol:06}", conf=conf)
                             LOGGER.info(f"Using tomo_bg_metacal={tomo_bg_metacal} from the Sobol index {i_sobol}")
                         else:
-                            raise ValueError("Either tomo_bg_metacal or i_sobol must be provided to generate the shape noise for fixed source clustering")
+                            raise ValueError(
+                                "Either tomo_bg_metacal or i_sobol must be provided to generate the shape noise for fixed source clustering"
+                            )
 
                     tomo_n_gal = np.array(conf["survey"]["metacal"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
                     dg = (dg - np.mean(dg, axis=0)) / np.mean(dg, axis=0)

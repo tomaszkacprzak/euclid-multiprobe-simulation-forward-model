@@ -24,7 +24,7 @@ esub ../../msfm/apps/run_single_postprocessing.py \
 import numpy as np
 import os, argparse, warnings, h5py, time, re
 
-from msfm.utils import files, logger, input_output, imports, observation
+from msfm.utils import files, logger, input_output, imports, observation, parameters
 
 hp = imports.import_healpy(parallel=False)
 
@@ -216,15 +216,26 @@ def main(indices, args):
         perm_dir = os.path.join(args.dir_in, f"perm_{index:04}")
 
         # metacal bias logic
-        if args.tomo_bg_metacal is None:
+        sc_mode = msfm_conf["analysis"]["modelling"]["lensing"]["source_clustering"]
+        if args.tomo_bg_metacal is not None:
+            tomo_bg_metacal = args.tomo_bg_metacal
+        elif sc_mode == "fixed":
             if "/grid/" in perm_dir:
                 match = re.search(r"cosmo_(\d{6})", perm_dir)
                 i_sobol = int(match.group(1))
                 tomo_bg_metacal = files.read_metacal_bias(f"cosmo_{i_sobol:06}", conf=msfm_conf)
             elif "/fiducial/" in perm_dir or "benchmark" in perm_dir:
                 tomo_bg_metacal = files.read_metacal_bias(f"fiducial", conf=msfm_conf)
-        else:
-            tomo_bg_metacal = args.tomo_bg_metacal
+            else:
+                raise ValueError(f"Cannot determine metacal bias key from perm_dir={perm_dir!r}: expected '/grid/' or '/fiducial/'/'benchmark' in path")
+        elif sc_mode == "prior":
+            sc_prior = parameters.get_prior_intervals(["bsc"], conf=msfm_conf)
+            bsc_samples = np.random.default_rng(seed=index).uniform(
+                sc_prior[0, 0], sc_prior[0, 1], size=msfm_conf["analysis"]["n_patches"]
+            )
+            tomo_bg_metacal = None  # set per patch below
+        else:  # rotate
+            tomo_bg_metacal = None
 
         obs_maps = []
         obs_cls_raw = []
@@ -234,6 +245,9 @@ def main(indices, args):
             if args.debug and i_patch > 0:
                 LOGGER.warning("Debug mode: only processing the first patch")
                 break
+
+            if sc_mode == "prior" and args.tomo_bg_metacal is None:
+                tomo_bg_metacal = bsc_samples[i_patch]
 
             wl_gamma_patch, gc_count_patch = observation.forward_model_cosmogrid(
                 perm_dir,
