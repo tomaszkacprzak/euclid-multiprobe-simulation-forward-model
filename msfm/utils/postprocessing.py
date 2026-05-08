@@ -282,7 +282,7 @@ def postprocess_metacal_bin(
 
 def postprocess_lensing(kappa_full_sky, conf, pixel_file, i_z):
     n_side = conf["analysis"]["n_side"]
-    n_pix = conf["analysis"]["n_pix"]
+    n_pix = hp.nside2npix(n_side)
     n_patches = conf["analysis"]["n_patches"]
 
     # pixel file
@@ -355,7 +355,7 @@ def postprocess_shape_noise(
     delta_full_sky, conf, simset, pixel_file, noise_file, i_z, bgs_key, i_perm=None, bsc_samples=None
 ):
     n_side = conf["analysis"]["n_side"]
-    n_pix = conf["analysis"]["n_pix"]
+    n_pix = hp.nside2npix(n_side)
     n_patches = conf["analysis"]["n_patches"]
     n_noise_per_signal = conf["analysis"][simset]["n_noise_per_signal"]
 
@@ -482,7 +482,7 @@ def postprocess_maglim_bin(
 def postprocess_clustering(
     delta_full_sky, conf, i_z, simset, pixel_file, galaxy_sample="maglim", i_sobol=None, rng=None
 ):
-    n_pix = conf["analysis"]["n_pix"]
+    n_pix = hp.nside2npix(conf["analysis"]["n_side"])
     n_patches = conf["analysis"]["n_patches"]
 
     # pixel file
@@ -570,8 +570,8 @@ def _rsync_tfrecord_to_san(conf, tfr_file, san_dir_out):
 
 
 def _read_full_sky_bin(conf, full_maps_file, in_map_type, z_bin):
-    n_pix = conf["analysis"]["n_pix"]
     n_side = conf["analysis"]["n_side"]
+    n_pix = hp.nside2npix(n_side)
 
     # load the full sky maps
     LOGGER.timer.start("load_map")
@@ -579,7 +579,7 @@ def _read_full_sky_bin(conf, full_maps_file, in_map_type, z_bin):
     with h5py.File(full_maps_file, "r") as f:
         map_full = f[map_dir][:]
 
-        # to convert from nside 512 to 1024
+        # ud_grade if the stored map is at a different resolution than the analysis n_side
         if map_full.shape[0] != n_pix:
             map_full = hp.ud_grade(map_full, nside_out=n_side, order_in="RING", order_out="RING", pess=True)
 

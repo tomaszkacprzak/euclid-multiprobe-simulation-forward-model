@@ -61,7 +61,7 @@ def forward_model_observation_map(
     conf = files.load_config(conf)
 
     n_side = conf["analysis"]["n_side"]
-    n_pix = conf["analysis"]["n_pix"]
+    n_pix = hp.nside2npix(n_side)
     n_z_metacal = len(conf["survey"]["metacal"]["z_bins"])
     n_z_maglim = len(conf["survey"]["maglim"]["z_bins"])
 
@@ -252,7 +252,7 @@ def forward_model_cosmogrid(
 
     # constants
     n_side = conf["analysis"]["n_side"]
-    n_pix = conf["analysis"]["n_pix"]
+    n_pix = hp.nside2npix(n_side)
     data_vec_pix, patches_pix_dict, _, gamma2_signs = files.load_pixel_file(conf)
 
     map_file = filenames.get_filename_full_maps(map_dir, with_bary=conf["analysis"]["modelling"]["baryonified"])
@@ -560,7 +560,7 @@ def make_shape_noise_map(wl_counts_map, conf, source_clustering="fixed", noise_s
     tf.random.set_seed(noise_seed)
 
     # constants
-    n_pix = conf["analysis"]["n_pix"]
+    n_pix = hp.nside2npix(conf["analysis"]["n_side"])
     _, patches_pix_dict, _, _ = files.load_pixel_file(conf)
 
     tomo_gamma_cat = files.load_noise_file(conf)

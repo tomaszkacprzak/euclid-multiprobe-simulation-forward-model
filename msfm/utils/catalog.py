@@ -66,7 +66,7 @@ def build_metacal_map_from_cat(conf, debug=True, force_recompute=False):
             LOGGER.info("Cache not found, computing metacal maps")
 
     n_side = conf["analysis"]["n_side"]
-    n_pix = conf["analysis"]["n_pix"]
+    n_pix = hp.nside2npix(n_side)
 
     n_z = len(conf["survey"]["metacal"]["z_bins"])
     Aeff = conf["survey"]["Aeff"]
@@ -180,7 +180,7 @@ def build_maglim_map_from_cat(conf, debug=True, force_recompute=False):
             LOGGER.info("Cache not found, computing maglim map")
 
     n_side = conf["analysis"]["n_side"]
-    n_pix = conf["analysis"]["n_pix"]
+    n_pix = hp.nside2npix(n_side)
 
     n_z = len(conf["survey"]["maglim"]["z_bins"])
     z_lims = conf["survey"]["maglim"]["z_lims"]

@@ -10,7 +10,9 @@ Functions to handle the configuration and read in the survey files on the data v
 import os, h5py, warnings
 import numpy as np
 
-from msfm.utils import logger, input_output, filenames, scales, maps
+from msfm.utils import logger, input_output, filenames, scales, maps, imports
+
+hp = imports.import_healpy()
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -150,7 +152,7 @@ def get_clustering_systematics(conf=None, pixel_type="data_vector", apply_smooth
         # constants
         data_vec_pix, patches_pix_dict, _, _ = load_pixel_file(conf)
         n_side = conf["analysis"]["n_side"]
-        n_pix = conf["analysis"]["n_pix"]
+        n_pix = hp.nside2npix(n_side)
         tomo_l_min = conf["analysis"]["scale_cuts"]["maglim"]["l_min"]
         tomo_theta_fwhm = conf["analysis"]["scale_cuts"]["maglim"]["theta_fwhm"]
 
@@ -227,7 +229,7 @@ def get_dv_mask(conf=None):
 def get_tomo_masks(conf=None, nest_out=True):
     conf = load_config(conf)
 
-    n_pix = conf["analysis"]["n_pix"]
+    n_pix = hp.nside2npix(conf["analysis"]["n_side"])
     data_vec_pix, _, _, _ = load_pixel_file(conf)
     dv_masks_dict = get_tomo_dv_masks(conf)
 
