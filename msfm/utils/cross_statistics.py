@@ -11,7 +11,13 @@ import numpy as np
 
 
 def get_cross_bin_indices(
-    n_z_lensing=4, n_z_clustering=4, with_lensing=True, with_clustering=True, with_cross_z=True, with_cross_probe=None
+    n_z_lensing=4,
+    n_z_clustering=4,
+    with_lensing=True,
+    with_clustering=True,
+    with_cross_z=True,
+    with_cross_probe=None,
+    ggl_only=False,
 ):
     """Returns a list of indices corresponding to the auto and cross spectra of the selected probes and tomographic
     bins. Note that this assumes that the channels are assumed to be ordered as lensing first, followed by clustering.
@@ -24,6 +30,8 @@ def get_cross_bin_indices(
         with_clustering (bool, optional): Whether to include include the galaxy clustering bins. Defaults to True.
         with_cross_z (bool, optional): Whether to include the tomographic cross bins. Defaults to True.
         with_cross_probe (bool, optional): Whether to include the cross probe bins. Defaults to True.
+        ggl_only (bool, optional): When True, only include cross-probe (GGL) pairs where the clustering lens bin
+            index is ≤ the lensing source bin index, i.e. lenses are in front of sources. Defaults to False.
 
     Returns:
         list: List of indices corresponding to the auto and cross spectra of the selected probes and tomographic bins,
@@ -33,10 +41,6 @@ def get_cross_bin_indices(
 
     if with_cross_probe is None:
         with_cross_probe = with_lensing and with_clustering
-
-    assert not (
-        with_cross_probe and not with_cross_z
-    ), f"Cross probe correlations are only allowed if cross z correlations are considered."
 
     # loop over all auto and cross spectra
     index = 0
@@ -63,9 +67,12 @@ def get_cross_bin_indices(
                     elif i == j:
                         clustering_indices.append(index)
 
-                # cross probe
+                # cross probe: i is the lensing source bin, j - n_z_lensing is the clustering lens bin
                 elif with_cross_probe:
-                    cross_indices.append(index)
+                    if ggl_only and (j - n_z_lensing) > i:
+                        pass  # lens bin is behind source bin — skip
+                    else:
+                        cross_indices.append(index)
 
                 index += 1
 
