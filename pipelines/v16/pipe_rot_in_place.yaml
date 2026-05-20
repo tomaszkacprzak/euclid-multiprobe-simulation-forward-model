@@ -1,0 +1,23 @@
+# this is meant for Perlmutter, not Euler
+
+# postprocessing
+- name: grid_tfrecords
+  cmd: esub ../../msfm/apps/run_grid_postprocessing.py --n_files=2500 \
+    --config=../../configs/v16/rot_in_place.yaml \
+    --dir_in=/global/cfs/cdirs/des/cosmogrid/processed/v11desy3/CosmoGrid/bary \
+    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v16/rot_in_place/tfrecords/grid \
+    --cosmogrid_version="1.1" --mode=jobarray --function=all --n_jobs=2500 \
+    --max_njobs=1000 --tasks="0>2500" --keep_submit_files \
+    --job_name=tfr_grid_v16 \
+    --log_dir=/pscratch/sd/a/athomsen/run_files/v16/esub_logs --system=slurm \
+    --source_file=../../pipelines/v16/perlmutter_setup.sh \
+    --additional_slurm_args="--account=m5030,--constraint=cpu,--qos=shared,--licenses=cfs,--licenses=scratch"
+
+# noise generation for the Cls
+- name: cl_white_noise
+  cmd: esub ../../msfm/apps/run_power_spectra_noise.py --n_noise=1000000 \
+    --n_noise_per_index=1000 --config=../../configs/v16/rot_in_place.yaml \
+    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v16/rot_in_place/cls \
+    --mode=jobarray --function=all --system=slurm --job_name=white_noise \
+    --log_dir=/pscratch/sd/a/athomsen/run_files/v16/esub_logs \
+    --additional_slurm_args="--account=m5030,--constraint=cpu,--qos=shared,--licenses=cfs,--licenses=scratch"
