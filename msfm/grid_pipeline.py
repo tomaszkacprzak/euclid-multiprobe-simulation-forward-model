@@ -140,6 +140,9 @@ class GridPipeline(MSFMpipeline):
         examples_shuffle_seed: int = 12,
         # distribution
         input_context: tf.distribute.InputContext = None,
+        # nside downsampling
+        downsample_nside: int = None,
+        parent_output_idx=None,
     ) -> tf.data.Dataset:
         """Builds the tf.data.Dataset from the given file name pattern and performance related parameters.
 
@@ -314,6 +317,20 @@ class GridPipeline(MSFMpipeline):
             num_parallel_calls=n_augment_workers,
         )
 
+        # optional nside downsampling (e.g. for faster smoothing at low nside)
+        if downsample_nside is not None and parent_output_idx is not None:
+            parent_output_idx_tf = tf.constant(parent_output_idx, dtype=tf.int32)
+            n_pix_out = int(parent_output_idx.max()) + 1
+
+            def _downsample_dv(dv, *rest):
+                # dv: (batch, n_pix_in, n_channels) → (batch, n_pix_out, n_channels)
+                dv_t = tf.transpose(dv, perm=[1, 0, 2])  # (n_pix_in, batch, n_channels)
+                dv_down_t = tf.math.unsorted_segment_mean(dv_t, parent_output_idx_tf, n_pix_out)
+                return (tf.transpose(dv_down_t, perm=[1, 0, 2]), *rest)
+
+            dset = dset.map(_downsample_dv, num_parallel_calls=n_augment_workers, deterministic=is_eval)
+            LOGGER.info(f"Downsampling maps to nside={downsample_nside} ({n_pix_out} pixels)")
+
         # prefetch
         if n_prefetch != 0:
             if n_prefetch is None:
@@ -321,7 +338,7 @@ class GridPipeline(MSFMpipeline):
             dset = dset.prefetch(n_prefetch)
             LOGGER.info(f"Prefetching {n_prefetch} elements")
 
-        LOGGER.info(f"Successfully generated the grid validation set with element_spec {dset.element_spec}")
+        LOGGER.info(f"Successfully generated the grid set with element_spec {dset.element_spec}")
         return dset
 
     def _split_noise_realizations(self, data_vectors: dict, noise_indices: Union[list, range]) -> tf.data.Dataset:

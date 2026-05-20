@@ -8,7 +8,6 @@
 *.pdf
 *.slurm
 # except in the data directory
-!data/**/*.npy
 !data/**/*.npz
 !data/**/*.h5
 !data/**/*.hdf5
