@@ -47,5 +47,5 @@ Notebooks for generating contents of the `data` directory.
 Submission commands for distributed HPC execution via [`esub-epipe`](https://cosmo-gitlab.phys.ethz.ch/cosmo_public/esub-epipe).
 
 ## Companion Repositories
-- Informative map-level neural summary statistics: [`y3-deep-lss`](https://github.com/des-science/y3-deep-lss)
-- Simulation-based inference: [`multiprobe-simulation-inference`](https://github.com/des-science/multiprobe-simulation-inference)
+- Informative map-level neural summary statistics: [`euclid-deep-lss`](https://github.com/tomaszkacprzak/euclid-deep-lss/)
+- Simulation-based inference: [`euclid-multiprobe-simulation-inference`](https://github.com/tomaszkacprzak/euclid-multiprobe-simulation-inference/)
