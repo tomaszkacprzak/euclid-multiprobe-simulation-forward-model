@@ -5,7 +5,7 @@
 This repository provides a pipeline to forward model Euclid-like weak lensing and galaxy clustering mocks from cosmological simulations:
 - **Input:** Full-sky probe maps (weak lensing signal, intrinsic alignments, and dark matter density) from the [CosmoGridV1](http://www.cosmogrid.ai/) simulation suite [[Kacprzak & Fluri et al. 2022](https://arxiv.org/abs/2209.04662)] projected using [`cosmogridv11`](https://github.com/CosmoGridCollab/cosmogridv11)
 - **Output:** Self-consistent Euclid-like weak lensing (convergence) and galaxy clustering (linear bias) maps with realistic survey properties, following [[Thomsen et al. 2025](https://arxiv.org/abs/2511.04681)]
-- **Deep Learning Integration**: The data storage and loading are designed to work in conjunction with the training pipeline for mutual information maximizing graph convolutional neural networks in [`y3-deep-lss`](https://github.com/des-science/y3-deep-lss)
+- **Deep Learning Integration**: The data storage and loading are designed to work in conjunction with the training pipeline for mutual information maximizing graph convolutional neural networks in [`euclid-deep-lss`](https://github.com/tomaszkacprzak/euclid-deep-lss/)
 
 ![](data/figures/combined_moll+gnom.png)
 
