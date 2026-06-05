@@ -279,18 +279,18 @@ def get_l_limits(conf):
 
     l_mins = []
     if store_lensing:
-        l_mins += l_min_lensing if l_min_lensing is not None else [None] * len(conf["survey"]["metacal"]["z_bins"])
+        l_mins += l_min_lensing if l_min_lensing is not None else [None] * len(conf["survey"]["lensing"]["z_bins"])
     if store_clustering:
         l_mins += (
-            l_min_clustering if l_min_clustering is not None else [None] * len(conf["survey"]["maglim"]["z_bins"])
+            l_min_clustering if l_min_clustering is not None else [None] * len(conf["survey"]["clustering"]["z_bins"])
         )
 
     l_maxs = []
     if store_lensing:
-        l_maxs += l_max_lensing if l_max_lensing is not None else [None] * len(conf["survey"]["metacal"]["z_bins"])
+        l_maxs += l_max_lensing if l_max_lensing is not None else [None] * len(conf["survey"]["lensing"]["z_bins"])
     if store_clustering:
         l_maxs += (
-            l_max_clustering if l_max_clustering is not None else [None] * len(conf["survey"]["maglim"]["z_bins"])
+            l_max_clustering if l_max_clustering is not None else [None] * len(conf["survey"]["clustering"]["z_bins"])
         )
 
     return l_mins, l_maxs
@@ -299,9 +299,9 @@ def get_l_limits(conf):
 def bin_according_to_config(cls, conf):
     n_z = 0
     if conf["analysis"]["modelling"]["lensing"]["store"]:
-        n_z += len(conf["survey"]["metacal"]["z_bins"])
+        n_z += len(conf["survey"]["lensing"]["z_bins"])
     if conf["analysis"]["modelling"]["clustering"]["store"]:
-        n_z += len(conf["survey"]["maglim"]["z_bins"])
+        n_z += len(conf["survey"]["clustering"]["z_bins"])
 
     binned_cls, bin_edges = smooth_and_bin_cls(
         cls,

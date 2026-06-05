@@ -425,7 +425,7 @@ def _get_clustering_transform(conf, pixel_file):
 
     maglim_mask = files.get_tomo_dv_masks(conf)["maglim"]
     tomo_z_maglim, tomo_nz_maglim = files.load_redshift_distributions("maglim", conf)
-    tomo_n_gal_maglim = np.array(conf["survey"]["maglim"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+    tomo_n_gal_maglim = np.array(conf["survey"]["clustering"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
 
     # survey systematics
     if conf["analysis"]["modelling"]["maglim_survey_systematics_map"]:

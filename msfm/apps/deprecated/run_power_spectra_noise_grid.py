@@ -109,7 +109,7 @@ def main(indices, args):
     conf = files.load_config(args.config)
     n_side = conf["analysis"]["n_side"]
     n_pix = conf["analysis"]["n_pix"]
-    n_z = len(conf["survey"]["metacal"]["z_bins"] + conf["survey"]["maglim"]["z_bins"])
+    n_z = len(conf["survey"]["lensing"]["z_bins"] + conf["survey"]["clustering"]["z_bins"])
 
     l_max = 3 * n_side
     l_mins = conf["analysis"]["scale_cuts"]["lensing"]["l_min"] + conf["analysis"]["scale_cuts"]["clustering"]["l_min"]
@@ -174,7 +174,7 @@ def merge(indices, args):
         * conf["analysis"]["grid"]["n_perms_per_cosmo"]
         * conf["analysis"]["grid"]["n_noise_per_example"]
     )
-    n_z = len(conf["survey"]["metacal"]["z_bins"] + conf["survey"]["maglim"]["z_bins"])
+    n_z = len(conf["survey"]["lensing"]["z_bins"] + conf["survey"]["clustering"]["z_bins"])
 
     out_file = os.path.join(args.dir_out, "white_noise.h5")
     with h5py.File(out_file, "w") as f:

@@ -25,7 +25,7 @@ files:
 
 survey:
   name: DESy3
-  metacal:
+  lensing:
     map_types:
       input: [kg, ia, dg, dg]
       output: [kg, ia, sn, ds]
@@ -45,7 +45,7 @@ survey:
         sigma: [0.0091, 0.0078, 0.0076, 0.0076]
     # pivot redshift from https://arxiv.org/pdf/2105.13543
     z0: 0.62
-  maglim:
+  clustering:
     map_types:
       input: [dg]
       output: [dg]

@@ -68,10 +68,10 @@ def build_metacal_map_from_cat(conf, debug=True, force_recompute=False):
     n_side = conf["analysis"]["n_side"]
     n_pix = hp.nside2npix(n_side)
 
-    n_z = len(conf["survey"]["metacal"]["z_bins"])
+    n_z = len(conf["survey"]["lensing"]["z_bins"])
     Aeff = conf["survey"]["Aeff"]
-    R_gamma = conf["survey"]["metacal"]["R_gamma"]
-    R_s = conf["survey"]["metacal"]["R_s"]
+    R_gamma = conf["survey"]["lensing"]["R_gamma"]
+    R_s = conf["survey"]["lensing"]["R_s"]
 
     cat_dir = conf["dirs"]["catalog"]
 
@@ -182,8 +182,8 @@ def build_maglim_map_from_cat(conf, debug=True, force_recompute=False):
     n_side = conf["analysis"]["n_side"]
     n_pix = hp.nside2npix(n_side)
 
-    n_z = len(conf["survey"]["maglim"]["z_bins"])
-    z_lims = conf["survey"]["maglim"]["z_lims"]
+    n_z = len(conf["survey"]["clustering"]["z_bins"])
+    z_lims = conf["survey"]["clustering"]["z_lims"]
     Aeff = conf["survey"]["Aeff"]
 
     cat_dir = conf["dirs"]["catalog"]
@@ -234,8 +234,8 @@ def get_shapes_from_cat(conf):
     conf = files.load_config(conf)
 
     n_side = conf["analysis"]["n_side"]
-    R_gamma = conf["survey"]["metacal"]["R_gamma"]
-    R_s = conf["survey"]["metacal"]["R_s"]
+    R_gamma = conf["survey"]["lensing"]["R_gamma"]
+    R_s = conf["survey"]["lensing"]["R_s"]
 
     cat_dir = conf["dirs"]["catalog"]
 
@@ -243,7 +243,7 @@ def get_shapes_from_cat(conf):
     index = h5py.File(f"{cat_dir}/DESY3_indexcat.h5", "r")
     gold = h5py.File(f"{cat_dir}/DESY3_GOLD_2_2.1.h5", "r")
 
-    n_z = len(conf["survey"]["metacal"]["z_bins"])
+    n_z = len(conf["survey"]["lensing"]["z_bins"])
     gamma_1 = []
     gamma_2 = []
     weight = []

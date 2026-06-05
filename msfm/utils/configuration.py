@@ -34,7 +34,7 @@ def print_and_check_modeling_in_config(conf):
     ), "Power law biasing is not consistent with bg parameters"
 
     assert conf_clustering["per_bin_biasing"] == {
-        f"bg{i+1}" for i, _ in enumerate(conf["survey"]["maglim"]["z_bins"])
+        f"bg{i+1}" for i, _ in enumerate(conf["survey"]["clustering"]["z_bins"])
     }.issubset(bg_params), "Per bin biasing is not consistent with bg parameters"
 
     if conf_clustering["stochasticity"]:

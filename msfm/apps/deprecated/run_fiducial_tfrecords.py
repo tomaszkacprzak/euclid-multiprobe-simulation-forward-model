@@ -213,7 +213,7 @@ def main(indices, args):
             return kg
 
     # clustering (linear + optionally quadratic galaxy bias)
-    tomo_n_gal_maglim = tf.constant(conf["survey"]["maglim"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+    tomo_n_gal_maglim = tf.constant(conf["survey"]["clustering"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
     tomo_bg_perts_dict = parameters.get_tomo_amplitude_perturbations_dict("bg", conf)
 
     if quadratic_biasing:

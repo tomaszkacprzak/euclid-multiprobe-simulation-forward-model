@@ -136,7 +136,7 @@ def main(indices, args):
     # constants
     n_side = conf["analysis"]["n_side"]
     n_pix = hp.nside2npix(n_side)
-    n_z_bins = len(conf["survey"]["metacal"]["z_bins"]) + len(conf["survey"]["maglim"]["z_bins"])
+    n_z_bins = len(conf["survey"]["lensing"]["z_bins"]) + len(conf["survey"]["clustering"]["z_bins"])
 
     # peaks
     n_bins = conf["analysis"]["peak_statistics"]["n_bins"]

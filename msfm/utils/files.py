@@ -86,7 +86,7 @@ def load_pixel_file(conf=None):
         # Metacal sample: weak lensing
         metacal_tomo_patches_pix = []
         metacal_tomo_corresponding_pix = []
-        for z_bin in conf["survey"]["metacal"]["z_bins"]:
+        for z_bin in conf["survey"]["lensing"]["z_bins"]:
             # shape (4, pix_in_bin)
             patches_pix = f[f"metacal/patches/{z_bin}"][:]
             # shape (pix_in_bin,)
@@ -101,7 +101,7 @@ def load_pixel_file(conf=None):
         # Maglim sample: galaxy clustering
         maglim_tomo_patches_pix = []
         maglim_tomo_corresponding_pix = []
-        for z_bin in conf["survey"]["maglim"]["z_bins"]:
+        for z_bin in conf["survey"]["clustering"]["z_bins"]:
             patches_pix = f[f"maglim/patches/{z_bin}"][:]
             corresponding_pix = f[f"maglim/patch_to_data_vec/{z_bin}"][:]
 
@@ -145,7 +145,7 @@ def get_clustering_systematics(conf=None, pixel_type="data_vector", apply_smooth
 
     with h5py.File(pixel_file, "r") as f:
         tomo_sys = []
-        for z_bin in conf["survey"]["maglim"]["z_bins"]:
+        for z_bin in conf["survey"]["clustering"]["z_bins"]:
             tomo_sys.append(f[f"maglim/systematics/{pixel_type}/{z_bin}"][:])
 
     if apply_smoothing:
@@ -278,7 +278,7 @@ def load_noise_file(conf=None):
 
     with h5py.File(noise_file, "r") as f:
         tomo_gamma_cat = []
-        for z_bin in conf["survey"]["metacal"]["z_bins"]:
+        for z_bin in conf["survey"]["lensing"]["z_bins"]:
             # shape (n_gal, 3) with e1, e2, w
             gamma_cat = f[f"{z_bin}/cat"][:]
 

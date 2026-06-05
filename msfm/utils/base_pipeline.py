@@ -89,8 +89,8 @@ class MSFMpipeline:
         self.return_cls = return_cls
         assert self.return_maps or self.return_cls, "At least one of return_maps and return_cls must be True"
 
-        self.n_z_metacal = len(self.conf["survey"]["metacal"]["z_bins"])
-        self.n_z_maglim = len(self.conf["survey"]["maglim"]["z_bins"])
+        self.n_z_metacal = len(self.conf["survey"]["lensing"]["z_bins"])
+        self.n_z_maglim = len(self.conf["survey"]["clustering"]["z_bins"])
 
         # pixel file
         self.data_vec_pix, _, _, _ = files.load_pixel_file(self.conf)
@@ -120,7 +120,7 @@ class MSFMpipeline:
 
         # clustering
         self.with_clustering = with_clustering
-        self.tomo_n_gal_maglim = tf.constant(self.conf["survey"]["maglim"]["n_gal"]) * hp.nside2pixarea(
+        self.tomo_n_gal_maglim = tf.constant(self.conf["survey"]["clustering"]["n_gal"]) * hp.nside2pixarea(
             self.conf["analysis"]["n_side"], degrees=True
         )
         self.normalize_clustering = lambda clustering_dv: clustering_dv / tf.constant(

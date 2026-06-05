@@ -323,8 +323,8 @@ def main(indices, args):
                     LOGGER.warning(f"Debug mode, reading the state from {state_file}")
                 else:
                     # annoyingly, we need to keep track of the patches like this
-                    n_metacal_bins = len(conf["survey"]["metacal"]["z_bins"])
-                    n_maglim_bins = len(conf["survey"]["maglim"]["z_bins"])
+                    n_metacal_bins = len(conf["survey"]["lensing"]["z_bins"])
+                    n_maglim_bins = len(conf["survey"]["clustering"]["z_bins"])
                     n_cosmo_perts = len(cosmo_pert_labels)
                     n_ia_perts = len(ia_pert_labels)
                     n_bg_perts = len(bg_pert_labels)
@@ -592,7 +592,7 @@ def _get_clustering_transform(conf, pixel_file):
     quadratic_biasing = conf["analysis"]["modelling"]["clustering"]["quadratic_biasing"]
 
     maglim_mask = files.get_tomo_dv_masks(conf)["maglim"]
-    tomo_n_gal_maglim = tf.constant(conf["survey"]["maglim"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+    tomo_n_gal_maglim = tf.constant(conf["survey"]["clustering"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
 
     # redshift dependence of the bias
     tomo_bg_perts_dict = parameters.get_tomo_amplitude_perturbations_dict("bg", conf)

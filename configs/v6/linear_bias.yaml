@@ -20,7 +20,7 @@ files:
 
 survey:
   name: DESy3
-  metacal:
+  lensing:
     map_types:
       input: [kg, ia, dg]
       output: [kg, ia, sn]
@@ -40,7 +40,7 @@ survey:
       multiplicative:
         mu: [-0.0063, -0.0198, -0.0241, -0.0369]
         sigma: [0.0091, 0.0078, 0.0076, 0.0076]
-  maglim:
+  clustering:
     map_types:
       input: [dg]
       output: [dg]

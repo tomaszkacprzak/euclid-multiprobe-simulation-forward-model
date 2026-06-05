@@ -101,23 +101,23 @@ def _set_up_per_example_dv_container(conf, pixel_file, is_fiducial):
 
     out_map_types = []
     if store_lensing:
-        out_map_types += conf["survey"]["metacal"]["map_types"]["output"]
+        out_map_types += conf["survey"]["lensing"]["map_types"]["output"]
     if store_clustering:
-        out_map_types += conf["survey"]["maglim"]["map_types"]["output"]
+        out_map_types += conf["survey"]["clustering"]["map_types"]["output"]
 
     data_vec_container = {}
     for out_map_type in out_map_types:
         if out_map_type in ["kg", "ia", "ds"]:
-            n_z_bins = len(conf["survey"]["metacal"]["z_bins"])
+            n_z_bins = len(conf["survey"]["lensing"]["z_bins"])
             dvs_shape = (n_patches, data_vec_len, n_z_bins)
         elif out_map_type == "sn":
-            n_z_bins = len(conf["survey"]["metacal"]["z_bins"])
+            n_z_bins = len(conf["survey"]["lensing"]["z_bins"])
             if is_fiducial:
                 dvs_shape = (n_patches, n_noise_per_signal, data_vec_len, n_z_bins)
             else:
                 dvs_shape = None
         elif out_map_type == "dg":
-            n_z_bins = len(conf["survey"]["maglim"]["z_bins"])
+            n_z_bins = len(conf["survey"]["clustering"]["z_bins"])
             dvs_shape = (n_patches, data_vec_len, n_z_bins)
 
         if dvs_shape is not None:
@@ -221,20 +221,20 @@ def _set_up_per_cosmo_dv_container(conf, pixel_file):
 
     out_map_types = []
     if store_lensing:
-        out_map_types += conf["survey"]["metacal"]["map_types"]["output"]
+        out_map_types += conf["survey"]["lensing"]["map_types"]["output"]
     if store_clustering:
-        out_map_types += conf["survey"]["maglim"]["map_types"]["output"]
+        out_map_types += conf["survey"]["clustering"]["map_types"]["output"]
 
     data_vec_container = {}
     for out_map_type in out_map_types:
         if out_map_type in ["kg", "ia", "ds"]:
-            n_z_bins = len(conf["survey"]["metacal"]["z_bins"])
+            n_z_bins = len(conf["survey"]["lensing"]["z_bins"])
             dvs_shape = (n_perms_per_cosmo * n_patches, data_vec_len, n_z_bins)
         elif out_map_type == "dg":
-            n_z_bins = len(conf["survey"]["maglim"]["z_bins"])
+            n_z_bins = len(conf["survey"]["clustering"]["z_bins"])
             dvs_shape = (n_perms_per_cosmo * n_patches, data_vec_len, n_z_bins)
         elif out_map_type == "sn":
-            n_z_bins = len(conf["survey"]["metacal"]["z_bins"])
+            n_z_bins = len(conf["survey"]["lensing"]["z_bins"])
             dvs_shape = (n_perms_per_cosmo * n_patches, n_noise_per_signal, data_vec_len, n_z_bins)
 
         data_vec_container[out_map_type] = np.zeros(dvs_shape, dtype=np.float32)
@@ -268,7 +268,7 @@ def postprocess_metacal_bin(
             full_sky_map, conf, simset, pixel_file, noise_file, i_z, bgs_key, i_perm, bsc_samples
         )
     elif in_map_type == "dg" and out_map_type == "ds":
-        full_sky_ia = _read_full_sky_bin(conf, full_maps_file, "ia", conf["survey"]["metacal"]["z_bins"][i_z])
+        full_sky_ia = _read_full_sky_bin(conf, full_maps_file, "ia", conf["survey"]["lensing"]["z_bins"][i_z])
         full_sky_ds = (full_sky_ia - np.mean(full_sky_ia)) * (
             (full_sky_map - np.mean(full_sky_map)) / np.mean(full_sky_map)
         )
@@ -383,7 +383,7 @@ def postprocess_shape_noise(
     else:
         raise ValueError(f"Unknown source clustering mode {sc_mode}")
 
-    tomo_n_gal = np.array(conf["survey"]["metacal"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+    tomo_n_gal = np.array(conf["survey"]["lensing"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
     n_bar = tomo_n_gal[i_z]
 
     _, gamma2kappa_fac, _ = lensing.get_kaiser_squires_factors(3 * n_side - 1)

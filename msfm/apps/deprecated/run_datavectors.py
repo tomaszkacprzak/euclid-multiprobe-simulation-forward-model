@@ -154,8 +154,8 @@ def main(indices, args):
         LOGGER.warning(f"Degrading the weak lensing maps to Gaussian Random Fields")
 
     # metacal, TODO this is only a placeholder bias
-    tomo_bias_metacal = conf["survey"]["metacal"]["galaxy_bias"]
-    tomo_n_gal_metacal = np.array(conf["survey"]["metacal"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+    tomo_bias_metacal = conf["survey"]["lensing"]["galaxy_bias"]
+    tomo_n_gal_metacal = np.array(conf["survey"]["lensing"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
 
     # alm
     kappa2gamma_fac, gamma2kappa_fac, _ = lensing.get_kaiser_squires_factors(3 * n_side - 1)
@@ -486,10 +486,10 @@ def _save_output_container(
     with h5py.File(filename, "a") as f:
         for map_type in container.keys():
             # set the number of redshift bins
-            if map_type in conf["survey"]["metacal"]["map_types"]["output"]:
-                n_z_bins = len(conf["survey"]["metacal"]["z_bins"])
-            elif map_type in conf["survey"]["maglim"]["map_types"]["output"]:
-                n_z_bins = len(conf["survey"]["maglim"]["z_bins"])
+            if map_type in conf["survey"]["lensing"]["map_types"]["output"]:
+                n_z_bins = len(conf["survey"]["lensing"]["z_bins"])
+            elif map_type in conf["survey"]["clustering"]["map_types"]["output"]:
+                n_z_bins = len(conf["survey"]["clustering"]["z_bins"])
 
             # there's multiple shape noise realizations
             if map_type == "sn":
