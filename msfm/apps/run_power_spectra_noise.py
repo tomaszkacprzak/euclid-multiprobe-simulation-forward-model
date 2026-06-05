@@ -114,7 +114,7 @@ def main(indices, args):
 
     conf = files.load_config(args.config)
     n_pix = hp.nside2npix(conf["analysis"]["n_side"])
-    n_z = len(conf["survey"]["metacal"]["z_bins"] + conf["survey"]["maglim"]["z_bins"])
+    n_z = len(conf["survey"]["lensing"]["z_bins"] + conf["survey"]["clustering"]["z_bins"])
 
     n_bins = conf["analysis"]["power_spectra"]["n_bins"]
 

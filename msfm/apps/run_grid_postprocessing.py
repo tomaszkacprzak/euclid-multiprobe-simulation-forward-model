@@ -528,7 +528,7 @@ def _get_lensing_transform(conf, pixel_file):
             n_Aia,
             tomo_z_metacal,
             tomo_nz_metacal,
-            z0=conf["survey"]["metacal"]["z0"],
+            z0=conf["survey"]["lensing"]["z0"],
             truncate_nz=conf["analysis"]["modelling"]["lensing"]["nla"]["truncate_nz"],
             z_min_quantile=conf["analysis"]["modelling"]["lensing"]["nla"]["z_min_quantile"],
             z_max_quantile=conf["analysis"]["modelling"]["lensing"]["nla"]["z_max_quantile"],
@@ -575,7 +575,7 @@ def _get_clustering_transform(conf, pixel_file):
     quadratic_biasing = conf["analysis"]["modelling"]["clustering"]["quadratic_biasing"]
 
     maglim_mask = files.get_tomo_dv_masks(conf)["maglim"]
-    tomo_n_gal_maglim = np.array(conf["survey"]["maglim"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+    tomo_n_gal_maglim = np.array(conf["survey"]["clustering"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
 
     # survey systematics
     if conf["analysis"]["modelling"]["clustering"]["maglim_survey_systematics_map"]:

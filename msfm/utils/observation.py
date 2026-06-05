@@ -62,8 +62,8 @@ def forward_model_observation_map(
 
     n_side = conf["analysis"]["n_side"]
     n_pix = hp.nside2npix(n_side)
-    n_z_metacal = len(conf["survey"]["metacal"]["z_bins"])
-    n_z_maglim = len(conf["survey"]["maglim"]["z_bins"])
+    n_z_metacal = len(conf["survey"]["lensing"]["z_bins"])
+    n_z_maglim = len(conf["survey"]["clustering"]["z_bins"])
 
     data_vec_pix, patches_pix_dict, corresponding_pix_dict, _ = files.load_pixel_file(conf)
     data_vec_len = len(data_vec_pix)
@@ -264,7 +264,7 @@ def forward_model_cosmogrid(
 
             metacal_mask = files.get_tomo_dv_masks(conf)["metacal"]
             kappa2gamma_fac, _, _ = lensing.get_kaiser_squires_factors(3 * n_side - 1)
-            metacal_bins = conf["survey"]["metacal"]["z_bins"]
+            metacal_bins = conf["survey"]["lensing"]["z_bins"]
 
             file_dir = os.path.dirname(__file__)
             repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
@@ -342,7 +342,7 @@ def forward_model_cosmogrid(
                                 "Either tomo_bg_metacal or i_sobol must be provided to generate the shape noise for fixed source clustering"
                             )
 
-                    tomo_n_gal = np.array(conf["survey"]["metacal"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+                    tomo_n_gal = np.array(conf["survey"]["lensing"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
                     dg = (dg - np.mean(dg, axis=0)) / np.mean(dg, axis=0)
                     counts_map = clustering.galaxy_density_to_count(
                         tomo_n_gal, dg, tomo_bg_metacal, systematics_map=None
@@ -438,8 +438,8 @@ def forward_model_cosmogrid(
             LOGGER.info(f"Starting with the galaxy clustering map")
             LOGGER.timer.start("galaxy_clustering")
 
-            maglim_bins = conf["survey"]["maglim"]["z_bins"]
-            tomo_n_gal_maglim = np.array(conf["survey"]["maglim"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+            maglim_bins = conf["survey"]["clustering"]["z_bins"]
+            tomo_n_gal_maglim = np.array(conf["survey"]["clustering"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
 
             # NOTE this assumes that the patches are the same for all tomographic bins, which is currently the case
             i_z_pix = 0
