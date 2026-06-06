@@ -45,7 +45,7 @@ dependencies = [
 # Only for environments where TensorFlow is not pre-installed
 tf = [
     "tensorflow>=2.0",
-    "tensorflow-probability",
+    "tensorflow-probability[tf]",
 ]
 
 # Development tools
