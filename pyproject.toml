@@ -38,7 +38,7 @@ dependencies = [
     "esub-epipe",
     "copy_guardian",
     "matplotlib",
-    "astropy",
+    "astropy>=6.1.0",
 ]
 
 [project.optional-dependencies]
