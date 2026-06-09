@@ -50,8 +50,8 @@ def get_m_bias_distribution(conf=None):
     import tensorflow_probability as tfp
 
     m_bias_dist = tfp.distributions.MultivariateNormalDiag(
-        loc=conf["survey"]["lensing"]["shear_bias"]["multiplicative"]["mu"],
-        scale_diag=conf["survey"]["lensing"]["shear_bias"]["multiplicative"]["sigma"],
+        loc=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["mu"],
+        scale_diag=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"],
     )
 
     return m_bias_dist

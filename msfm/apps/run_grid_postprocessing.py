@@ -87,13 +87,6 @@ def setup(args):
         help="version of the input CosmoGrid",
     )
     parser.add_argument(
-        "--cluster",
-        type=str,
-        default="perlmutter",
-        choices=("perlmutter", "euler"),
-        help="the cluster to execute on",
-    )
-    parser.add_argument(
         "--file_suffix",
         type=str,
         default="",
@@ -133,14 +126,7 @@ def setup(args):
     # paths
     args.config = os.path.abspath(args.config)
 
-    args.from_san = "/home/ipa/refreg" in args.dir_in
-    if args.from_san:
-        LOGGER.warning("Reading the CosmoGrid from the SAN")
-
-    args.to_san = "/home/ipa/refreg" in args.dir_out
-    if args.to_san:
-        LOGGER.warning("Writing the .tfrecords to the SAN")
-    elif not os.path.isdir(args.dir_out):
+    if not os.path.isdir(args.dir_out):
         input_output.robust_makedirs(args.dir_out)
 
     # compute
@@ -167,9 +153,8 @@ def main(indices, args):
 
     # configuration
     conf = files.load_config(args.config)
-    if not args.to_san:
-        with open(os.path.join(args.dir_out, "config.yaml"), "w") as f:
-            yaml.dump(conf, f)
+    with open(os.path.join(args.dir_out, "config.yaml"), "w") as f:
+        yaml.dump(conf, f)
 
     # directories
     file_dir = os.path.dirname(__file__)
@@ -197,14 +182,14 @@ def main(indices, args):
     baryonified = conf["analysis"]["modelling"]["baryonified"]
 
     store_cross_maps = conf["analysis"]["modelling"]["store_cross_maps"]
-    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
-    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
+    store_lensing = conf["analysis"]["modelling"]["WL"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["GC"]["store"]
 
-    extended_nla = conf["analysis"]["modelling"]["lensing"]["extended_nla"]
+    extended_nla = conf["analysis"]["modelling"]["WL"]["extended_nla"]
 
-    power_law_biasing = conf["analysis"]["modelling"]["clustering"]["power_law_biasing"]
-    per_bin_biasing = conf["analysis"]["modelling"]["clustering"]["per_bin_biasing"]
-    quadratic_biasing = conf["analysis"]["modelling"]["clustering"]["quadratic_biasing"]
+    power_law_biasing = conf["analysis"]["modelling"]["GC"]["power_law_biasing"]
+    per_bin_biasing = conf["analysis"]["modelling"]["GC"]["per_bin_biasing"]
+    quadratic_biasing = conf["analysis"]["modelling"]["GC"]["quadratic_biasing"]
 
     astro_params = conf["analysis"]["params"]["ia"]["nla"]
     if extended_nla:
@@ -212,7 +197,7 @@ def main(indices, args):
     astro_params += conf["analysis"]["params"]["bg"]["linear"]
     if quadratic_biasing:
         astro_params += conf["analysis"]["params"]["bg"]["quadratic"]
-    if conf["analysis"]["modelling"]["lensing"]["source_clustering"] == "prior":
+    if conf["analysis"]["modelling"]["WL"]["source_clustering"] == "prior":
         astro_params += conf["analysis"]["params"]["sc"]
     LOGGER.info(f"Sampling the astrophysical parameters {astro_params} from a Latin hypercube")
 
@@ -246,11 +231,6 @@ def main(indices, args):
     for index in indices:
         LOGGER.warning(f"Starting index {index}")
         LOGGER.timer.start("index")
-
-        if args.to_san:
-            LOGGER.info("Writing the .tfrecord to local scratch to be later copied to the SAN")
-            san_dir_out = args.dir_out
-            args.dir_out = os.environ["TMPDIR"]
 
         if args.debug:
             args.dir_out = os.path.join(args.dir_out, "debug")
@@ -291,7 +271,7 @@ def main(indices, args):
 
                 bsc_samples = (
                     astro_samples[:, -1]
-                    if conf["analysis"]["modelling"]["lensing"]["source_clustering"] == "prior"
+                    if conf["analysis"]["modelling"]["WL"]["source_clustering"] == "prior"
                     else None
                 )
 
@@ -346,7 +326,7 @@ def main(indices, args):
                     cosmo_sample = np.concatenate([cosmo, astro_sample])
 
                     # to keep the indexing identical
-                    if conf["analysis"]["modelling"]["lensing"]["source_clustering"] == "prior":
+                    if conf["analysis"]["modelling"]["WL"]["source_clustering"] == "prior":
                         astro_sample = astro_sample[:-1]
 
                     # lensing
@@ -360,11 +340,11 @@ def main(indices, args):
                     if power_law_biasing:
                         if quadratic_biasing:
                             bg, n_bg, qbg, n_qbg = astro_sample[-4:]
-                            tomo_qbg = redshift.get_tomo_amplitudes_according_to_config(conf, qbg, n_qbg, "maglim")
+                            tomo_qbg = redshift.get_tomo_amplitudes_according_to_config(conf, qbg, n_qbg, "gc")
                         else:
                             bg, n_bg = astro_sample[-2:]
                             tomo_qbg = None
-                        tomo_bg = redshift.get_tomo_amplitudes_according_to_config(conf, bg, n_bg, "maglim")
+                        tomo_bg = redshift.get_tomo_amplitudes_according_to_config(conf, bg, n_bg, "gc")
                     elif per_bin_biasing:
                         if quadratic_biasing:
                             bg1, bg2, bg3, bg4, qbg1, qbg2, qbg3, qbg4 = astro_sample[-8:]
@@ -394,17 +374,17 @@ def main(indices, args):
                         data_vec_pix = pixel_file[0]
                         n_side = conf["analysis"]["n_side"]
 
-                        n_z_metacal = alm_kg.shape[1]
-                        n_z_maglim = alm_dg.shape[1]
-                        n_z_cross = n_z_metacal * n_z_maglim
+                        n_z_wl = alm_kg.shape[1]
+                        n_z_gc = alm_dg.shape[1]
+                        n_z_cross = n_z_wl * n_z_gc
 
                         xg = np.zeros((kg.shape[0], n_z_cross), dtype=np.float32)
                         xn_samples = np.zeros((n_noise_per_signal, kg.shape[0], n_z_cross), dtype=np.float32)
                         ix = 0
                         for i in LOGGER.progressbar(
-                            range(n_z_metacal), desc="cross bins", total=n_z_metacal, at_level="debug"
+                            range(n_z_wl), desc="cross bins", total=n_z_wl, at_level="debug"
                         ):
-                            for j in range(n_z_maglim):
+                            for j in range(n_z_gc):
                                 alm_cross = np.sqrt(alm_kg[:, i] * alm_dg[:, j])
                                 map_cross = hp.alm2map(alm_cross, nside=n_side, pol=False)
                                 xg[:, ix] = hp.reorder(map_cross, r2n=True)[data_vec_pix]
@@ -440,8 +420,6 @@ def main(indices, args):
 
                     file_writer.write(serialized)
 
-        if args.to_san:
-            postprocessing._rsync_tfrecord_to_san(conf, tfr_file, san_dir_out)
 
         LOGGER.info(f"Done with index {index} after {LOGGER.timer.elapsed('index')}")
         
@@ -482,22 +460,22 @@ def _data_vector_smoothing(dv, l_min, l_max, theta_fwhm, np_seed, conf, pixel_fi
 
 
 def _get_lensing_transform(conf, pixel_file):
-    extended_nla = conf["analysis"]["modelling"]["lensing"]["extended_nla"]
+    extended_nla = conf["analysis"]["modelling"]["WL"]["extended_nla"]
 
-    tomo_z_metacal, tomo_nz_metacal = files.load_redshift_distributions("metacal", conf)
+    tomo_z_wl, tomo_nz_wl = files.load_redshift_distributions("WL", conf)
     m_bias_dist = lensing.get_m_bias_distribution(conf)
-    metacal_mask = files.get_tomo_dv_masks(conf)["metacal"]
+    wl_mask = files.get_tomo_dv_masks(conf)["WL"]
 
     def lensing_smoothing(kg, np_seed):
         kg, alm = _data_vector_smoothing(
             kg,
-            conf["analysis"]["scale_cuts"]["lensing"]["l_min"],
-            conf["analysis"]["scale_cuts"]["lensing"]["l_max"],
-            conf["analysis"]["scale_cuts"]["lensing"]["theta_fwhm"],
+            conf["analysis"]["scale_cuts"]["WL"]["l_min"],
+            conf["analysis"]["scale_cuts"]["WL"]["l_max"],
+            conf["analysis"]["scale_cuts"]["WL"]["theta_fwhm"],
             np_seed,
             conf,
             pixel_file,
-            metacal_mask,
+            wl_mask,
         )
 
         return kg, alm
@@ -507,12 +485,12 @@ def _get_lensing_transform(conf, pixel_file):
         tomo_Aia = redshift.get_tomo_amplitudes(
             Aia,
             n_Aia,
-            tomo_z_metacal,
-            tomo_nz_metacal,
-            z0=conf["survey"]["lensing"]["z0"],
-            truncate_nz=conf["analysis"]["modelling"]["lensing"]["nla"]["truncate_nz"],
-            z_min_quantile=conf["analysis"]["modelling"]["lensing"]["nla"]["z_min_quantile"],
-            z_max_quantile=conf["analysis"]["modelling"]["lensing"]["nla"]["z_max_quantile"],
+            tomo_z_wl,
+            tomo_nz_wl,
+            z0=conf["survey"]["WL"]["z0"],
+            truncate_nz=conf["analysis"]["modelling"]["WL"]["nla"]["truncate_nz"],
+            z_min_quantile=conf["analysis"]["modelling"]["WL"]["nla"]["z_min_quantile"],
+            z_max_quantile=conf["analysis"]["modelling"]["WL"]["nla"]["z_max_quantile"],
         )
         LOGGER.debug(f"Per z bin Aia = {tomo_Aia}")
 
@@ -528,12 +506,12 @@ def _get_lensing_transform(conf, pixel_file):
         m_bias = m_bias_dist.sample()
         kg *= 1.0 + m_bias
 
-        kg *= metacal_mask
+        kg *= wl_mask
         kg, alm_kg = lensing_smoothing(kg, np_seed)
 
         smooth_sn_samples, alm_sn_samples = [], []
         for i, shape_noise in enumerate(sn_samples):
-            shape_noise *= metacal_mask
+            shape_noise *= wl_mask
 
             smooth_sn, alm_sn = lensing_smoothing(shape_noise, np_seed + i)
 
@@ -553,27 +531,27 @@ def _get_clustering_transform(conf, pixel_file):
     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
 
     # modeling
-    quadratic_biasing = conf["analysis"]["modelling"]["clustering"]["quadratic_biasing"]
+    quadratic_biasing = conf["analysis"]["modelling"]["GC"]["quadratic_biasing"]
 
-    maglim_mask = files.get_tomo_dv_masks(conf)["maglim"]
-    tomo_n_gal_maglim = np.array(conf["survey"]["clustering"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+    gc_mask = files.get_tomo_dv_masks(conf)["GC"]
+    tomo_n_gal_gc = np.array(conf["survey"]["GC"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
 
     # survey systematics
-    if conf["analysis"]["modelling"]["clustering"]["maglim_survey_systematics_map"]:
-        tomo_maglim_sys_dv = files.get_clustering_systematics(conf, pixel_type="data_vector")
+    if conf["analysis"]["modelling"]["GC"]["survey_systematics_map"]:
+        tomo_gc_sys_dv = files.get_clustering_systematics(conf, pixel_type="data_vector")
     else:
-        tomo_maglim_sys_dv = None
+        tomo_gc_sys_dv = None
 
     def clustering_smoothing(dg, np_seed):
         dg, alm = _data_vector_smoothing(
             dg,
-            conf["analysis"]["scale_cuts"]["clustering"]["l_min"],
-            conf["analysis"]["scale_cuts"]["clustering"]["l_max"],
-            conf["analysis"]["scale_cuts"]["clustering"]["theta_fwhm"],
+            conf["analysis"]["scale_cuts"]["GC"]["l_min"],
+            conf["analysis"]["scale_cuts"]["GC"]["l_max"],
+            conf["analysis"]["scale_cuts"]["GC"]["theta_fwhm"],
             np_seed,
             conf,
             pixel_file,
-            maglim_mask,
+            gc_mask,
         )
 
         return dg, alm
@@ -598,7 +576,7 @@ def _get_clustering_transform(conf, pixel_file):
 
         # the distinction between linear and quadratic biasing is done in main with conditional None values
         dg = clustering.galaxy_density_to_count(
-            tomo_n_gal_maglim,
+            tomo_n_gal_gc,
             # linear
             dg,
             tomo_bg,
@@ -606,8 +584,8 @@ def _get_clustering_transform(conf, pixel_file):
             qdg,
             tomo_qdg,
             # misc
-            systematics_map=tomo_maglim_sys_dv,
-            mask=maglim_mask,
+            systematics_map=tomo_gc_sys_dv,
+            mask=gc_mask,
         )
 
         # draw noise, mask, smooth
@@ -615,7 +593,7 @@ def _get_clustering_transform(conf, pixel_file):
 
         smooth_pn_samples, alm_pn_samples = [], []
         for i, pn in enumerate(pn_samples):
-            pn *= maglim_mask
+            pn *= gc_mask
 
             smooth_pn, alm_smooth_pn = clustering_smoothing(pn, np_seed + i)
 
@@ -628,7 +606,7 @@ def _get_clustering_transform(conf, pixel_file):
         # noiseless
         dg, alm_dg = clustering_smoothing(dg, np_seed)
 
-        # shapes (n_pix, n_z_maglim), (n_noise_per_signal, n_pix, n_z_maglim)
+        # shapes (n_pix, n_z_gc), (n_noise_per_signal, n_pix, n_z_gc)
         return dg, pn_samples, alm_dg, alm_pn_samples
 
     return clustering_transform
@@ -639,7 +617,7 @@ def _extend_sobol_squence(conf, cosmo_params_info, i_cosmo):
     identical (computed here vs. stored in the CosmoGrid)"""
 
     baryonified = conf["analysis"]["modelling"]["baryonified"]
-    stochasticity = conf["analysis"]["modelling"]["clustering"]["stochasticity"]
+    stochasticity = conf["analysis"]["modelling"]["GC"]["stochasticity"]
 
     cosmo_params = conf["analysis"]["params"]["cosmo"].copy()
     if baryonified:
@@ -818,7 +796,8 @@ def merge(indices, args):
 if __name__ == "__main__":
 
     args = setup(sys.argv[1:])
-    main(args.indices, args=args)
+    indices = configuration.get_indices(args.indices)
+    main(indices=indices, args=args)
 
 
 # Code graveyard

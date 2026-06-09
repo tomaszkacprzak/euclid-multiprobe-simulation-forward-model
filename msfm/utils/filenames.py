@@ -48,5 +48,16 @@ def get_filename_tfrecords(out_dir, index, tag, simset, with_bary=False, return_
     return os.path.join(out_dir, file_name)
 
 
-def get_filename_z_distribution(data_dir, galaxy_sample_label, i_bin):
-    return os.path.join(data_dir, f"desy3_nz_{galaxy_sample_label}_bin{i_bin}.txt")
+def get_filename_z_distribution(conf, data_dir, galaxy_sample_label, i_bin):
+
+    if conf["survey"]["name"] == "DESy3":
+        fname = os.path.join(data_dir, f"desy3_nz_{galaxy_sample_label.upper()}_bin{i_bin}.txt")
+    
+    elif conf["survey"]["name"] == "EuclidDR1F":
+        fname = os.path.join(data_dir, f"RR2_v2_Nz_GC_C2020_sel_pv.{galaxy_sample_label.upper()}.{i_bin}.smoothed.txt")
+    
+    else:
+        raise ValueError(f"Survey {conf['survey']['name']} not supported")
+    
+    return fname
+

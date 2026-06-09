@@ -32,13 +32,13 @@ def postprocess_fiducial_permutations(args, conf, cosmo_dir_in, i_perm, pixel_fi
 
     is_fiducial = "cosmo_fiducial" in cosmo_dir_in
 
-    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
-    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
+    store_lensing = conf["analysis"]["modelling"]["WL"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["GC"]["store"]
     samples = []
     if store_lensing:
-        samples.append("metacal")
+        samples.append("WL")
     if store_clustering:
-        samples.append("maglim")
+        samples.append("GC")
 
     # output container, one for each example
     data_vec_container = _set_up_per_example_dv_container(conf, pixel_file, is_fiducial)
@@ -53,7 +53,7 @@ def postprocess_fiducial_permutations(args, conf, cosmo_dir_in, i_perm, pixel_fi
 
         for in_map_type, out_map_type in zip(in_map_types, out_map_types):
             # some fiducial perturbations are skipped for lensing
-            if (not is_fiducial) and (sample == "metacal") and (in_map_type == "dg"):
+            if (not is_fiducial) and (sample == "WL") and (in_map_type == "dg"):
                 LOGGER.info(f"Skipping input map type {in_map_type} for this perturbation")
                 continue
 
@@ -63,7 +63,7 @@ def postprocess_fiducial_permutations(args, conf, cosmo_dir_in, i_perm, pixel_fi
             for i_z, z_bin in enumerate(z_bins):
                 full_sky_bin = _read_full_sky_bin(conf, full_maps_file, in_map_type, z_bin)
 
-                if sample == "metacal":
+                if sample == "WL":
                     data_vecs = postprocess_metacal_bin(
                         conf,
                         full_sky_bin,
@@ -76,7 +76,7 @@ def postprocess_fiducial_permutations(args, conf, cosmo_dir_in, i_perm, pixel_fi
                         full_maps_file,
                         bgs_key="fiducial",
                     )
-                elif sample == "maglim":
+                elif sample == "GC":
                     data_vecs = postprocess_maglim_bin(
                         conf, full_sky_bin, in_map_type, out_map_type, i_z, "fiducial", pixel_file, rng=rng
                     )
@@ -96,28 +96,28 @@ def _set_up_per_example_dv_container(conf, pixel_file, is_fiducial):
     n_noise_per_signal = conf["analysis"]["fiducial"]["n_noise_per_signal"]
     data_vec_len = len(pixel_file[0])
 
-    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
-    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
+    store_lensing = conf["analysis"]["modelling"]["WL"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["GC"]["store"]
 
     out_map_types = []
     if store_lensing:
-        out_map_types += conf["survey"]["lensing"]["map_types"]["output"]
+        out_map_types += conf["survey"]["WL"]["map_types"]["output"]
     if store_clustering:
-        out_map_types += conf["survey"]["clustering"]["map_types"]["output"]
+        out_map_types += conf["survey"]["GC"]["map_types"]["output"]
 
     data_vec_container = {}
     for out_map_type in out_map_types:
         if out_map_type in ["kg", "ia", "ds"]:
-            n_z_bins = len(conf["survey"]["lensing"]["z_bins"])
+            n_z_bins = len(conf["survey"]["WL"]["z_bins"])
             dvs_shape = (n_patches, data_vec_len, n_z_bins)
         elif out_map_type == "sn":
-            n_z_bins = len(conf["survey"]["lensing"]["z_bins"])
+            n_z_bins = len(conf["survey"]["WL"]["z_bins"])
             if is_fiducial:
                 dvs_shape = (n_patches, n_noise_per_signal, data_vec_len, n_z_bins)
             else:
                 dvs_shape = None
         elif out_map_type == "dg":
-            n_z_bins = len(conf["survey"]["clustering"]["z_bins"])
+            n_z_bins = len(conf["survey"]["GC"]["z_bins"])
             dvs_shape = (n_patches, data_vec_len, n_z_bins)
 
         if dvs_shape is not None:
@@ -136,13 +136,13 @@ def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_fi
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
     rng = np.random.default_rng()
 
-    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
-    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
+    store_lensing = conf["analysis"]["modelling"]["WL"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["GC"]["store"]
     samples = []
     if store_lensing:
-        samples.append("metacal")
+        samples.append("WL")
     if store_clustering:
-        samples.append("maglim")
+        samples.append("GC")
 
     # output container, one for each cosmology
     data_vec_container = _set_up_per_cosmo_dv_container(conf, pixel_file)
@@ -171,8 +171,8 @@ def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_fi
                 for i_z, z_bin in enumerate(z_bins):
                     full_sky_bin = _read_full_sky_bin(conf, full_maps_file, in_map_type, z_bin)
 
-                    if sample == "metacal":
-                        data_vecs = postprocess_metacal_bin(
+                    if sample == "WL":
+                        data_vecs = postprocess_wl_bin(
                             conf,
                             full_sky_bin,
                             in_map_type,
@@ -186,8 +186,8 @@ def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_fi
                             i_perm=i_perm,
                             bsc_samples=bsc_samples,
                         )
-                    elif sample == "maglim":
-                        data_vecs = postprocess_maglim_bin(
+                    elif sample == "GC":
+                        data_vecs = postprocess_gc_bin(
                             conf,
                             full_sky_bin,
                             in_map_type,
@@ -216,25 +216,25 @@ def _set_up_per_cosmo_dv_container(conf, pixel_file):
     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     data_vec_len = len(pixel_file[0])
 
-    store_lensing = conf["analysis"]["modelling"]["lensing"]["store"]
-    store_clustering = conf["analysis"]["modelling"]["clustering"]["store"]
+    store_lensing = conf["analysis"]["modelling"]["WL"]["store"]
+    store_clustering = conf["analysis"]["modelling"]["GC"]["store"]
 
     out_map_types = []
     if store_lensing:
-        out_map_types += conf["survey"]["lensing"]["map_types"]["output"]
+        out_map_types += conf["survey"]["WL"]["map_types"]["output"]
     if store_clustering:
-        out_map_types += conf["survey"]["clustering"]["map_types"]["output"]
+        out_map_types += conf["survey"]["GC"]["map_types"]["output"]
 
     data_vec_container = {}
     for out_map_type in out_map_types:
         if out_map_type in ["kg", "ia", "ds"]:
-            n_z_bins = len(conf["survey"]["lensing"]["z_bins"])
+            n_z_bins = len(conf["survey"]["WL"]["z_bins"])
             dvs_shape = (n_perms_per_cosmo * n_patches, data_vec_len, n_z_bins)
         elif out_map_type == "dg":
-            n_z_bins = len(conf["survey"]["clustering"]["z_bins"])
+            n_z_bins = len(conf["survey"]["GC"]["z_bins"])
             dvs_shape = (n_perms_per_cosmo * n_patches, data_vec_len, n_z_bins)
         elif out_map_type == "sn":
-            n_z_bins = len(conf["survey"]["lensing"]["z_bins"])
+            n_z_bins = len(conf["survey"]["WL"]["z_bins"])
             dvs_shape = (n_perms_per_cosmo * n_patches, n_noise_per_signal, data_vec_len, n_z_bins)
 
         data_vec_container[out_map_type] = np.zeros(dvs_shape, dtype=np.float32)
@@ -245,7 +245,7 @@ def _set_up_per_cosmo_dv_container(conf, pixel_file):
 # lensing #############################################################################################################
 
 
-def postprocess_metacal_bin(
+def postprocess_wl_bin(
     conf,
     full_sky_map,
     in_map_type,
@@ -268,14 +268,14 @@ def postprocess_metacal_bin(
             full_sky_map, conf, simset, pixel_file, noise_file, i_z, bgs_key, i_perm, bsc_samples
         )
     elif in_map_type == "dg" and out_map_type == "ds":
-        full_sky_ia = _read_full_sky_bin(conf, full_maps_file, "ia", conf["survey"]["lensing"]["z_bins"][i_z])
+        full_sky_ia = _read_full_sky_bin(conf, full_maps_file, "ia", conf["survey"]["WL"]["z_bins"][i_z])
         full_sky_ds = (full_sky_ia - np.mean(full_sky_ia)) * (
             (full_sky_map - np.mean(full_sky_map)) / np.mean(full_sky_map)
         )
         # shape (n_patches, data_vec_len)
         kappa_dvs = postprocess_lensing(full_sky_ds, conf, pixel_file, i_z)
     else:
-        raise ValueError(f"Unknown input map type {in_map_type} for metacal/weak lensing")
+        raise ValueError(f"Unknown input map type {in_map_type} for weak lensing")
 
     return kappa_dvs
 
@@ -287,8 +287,8 @@ def postprocess_lensing(kappa_full_sky, conf, pixel_file, i_z):
 
     # pixel file
     data_vec_pix, patches_pix_dict, corresponding_pix_dict, gamma2_signs = pixel_file
-    patches_pix = patches_pix_dict["metacal"][i_z]
-    corresponding_pix = corresponding_pix_dict["metacal"][i_z]
+    patches_pix = patches_pix_dict["WL"][i_z]
+    corresponding_pix = corresponding_pix_dict["WL"][i_z]
     data_vec_len = len(data_vec_pix)
     base_patch_pix = patches_pix[0]
 
@@ -361,8 +361,8 @@ def postprocess_shape_noise(
 
     # pixel file
     data_vec_pix, patches_pix_dict, corresponding_pix_dict, _ = pixel_file
-    patches_pix = patches_pix_dict["metacal"][i_z]
-    corresponding_pix = corresponding_pix_dict["metacal"][i_z]
+    patches_pix = patches_pix_dict["WL"][i_z]
+    corresponding_pix = corresponding_pix_dict["WL"][i_z]
     data_vec_len = len(data_vec_pix)
     base_patch_pix = patches_pix[0]
 
@@ -371,7 +371,7 @@ def postprocess_shape_noise(
     gamma_cat = tomo_gamma_cat[i_z]
 
     # metacal clustering
-    sc_mode = conf["analysis"]["modelling"]["lensing"]["source_clustering"]
+    sc_mode = conf["analysis"]["modelling"]["WL"]["source_clustering"]
 
     if sc_mode == "fixed":
         tomo_bias = files.read_metacal_bias(bgs_key, conf)
@@ -383,7 +383,7 @@ def postprocess_shape_noise(
     else:
         raise ValueError(f"Unknown source clustering mode {sc_mode}")
 
-    tomo_n_gal = np.array(conf["survey"]["lensing"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+    tomo_n_gal = np.array(conf["survey"]["WL"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
     n_bar = tomo_n_gal[i_z]
 
     _, gamma2kappa_fac, _ = lensing.get_kaiser_squires_factors(3 * n_side - 1)
@@ -468,13 +468,13 @@ def postprocess_shape_noise(
 # clustering ##########################################################################################################
 
 
-def postprocess_maglim_bin(
+def postprocess_gc_bin(
     conf, full_sky_map, in_map_type, out_map_type, i_z, simset, pixel_file, i_sobol=None, rng=None
 ):
     if in_map_type in ["dg", "dg2"]:
-        delta_dvs = postprocess_clustering(full_sky_map, conf, i_z, simset, pixel_file, "maglim", i_sobol, rng)
+        delta_dvs = postprocess_clustering(full_sky_map, conf, i_z, simset, pixel_file, "GC", i_sobol, rng)
     else:
-        raise ValueError(f"Unknown input map type {in_map_type} for maglim/galaxy clustering")
+        raise ValueError(f"Unknown input map type {in_map_type} for galaxy clustering")
 
     return delta_dvs
 
@@ -548,25 +548,6 @@ def _get_full_sky_perm(args, conf, cosmo_dir_in, i_perm):
         )
 
     return full_maps_file
-
-
-def _rsync_tfrecord_to_san(conf, tfr_file, san_dir_out):
-    LOGGER.info("Copying the .tfrecord to the SAN")
-    LOGGER.timer.start("copy_to_san")
-
-    san_conf = conf["dirs"]["connections"]["san"]
-    input_output.robust_makedirs(san_conf["user"] + "@" + san_conf["host"] + ":" + san_dir_out)
-    san_file_out = os.path.join(san_dir_out, os.path.basename(tfr_file))
-    with copy_guardian.BoundedSemaphore(san_conf["max_connections"], timeout=san_conf["timeout"]):
-        connection = copy_guardian.Connection(
-            host=san_conf["host"],
-            user=san_conf["user"],
-            private_key=san_conf["private_key"],
-            port=san_conf["port"],
-        )
-        connection.rsync_to(tfr_file, san_file_out)
-
-    LOGGER.info(f"Done copying {tfr_file} to the SAN after {LOGGER.timer.elapsed('copy_to_san')}")
 
 
 def _read_full_sky_bin(conf, full_maps_file, in_map_type, z_bin):

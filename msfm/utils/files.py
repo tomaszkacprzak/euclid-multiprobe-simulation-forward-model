@@ -67,11 +67,11 @@ def load_pixel_file(conf=None):
 
     Returns:
         data_vec_pix: data vector pixels including padding in NEST ordering (non-tomographic).
-        patches_pix_dict: For "metacal" (tomographic) and "maglim" (non-tomographic), four patch indices in RING
+        patches_pix_dict: For "WL" (tomographic) and "GC" (non-tomographic), four patch indices in RING
             ordering to cut out from the full sky maps.
-        corresponding_pix_dict: For "metacal" (tomographic) and "maglim" (non-tomographic), needed to convert the
+        corresponding_pix_dict: For "WL" (tomographic) and "GC" (non-tomographic), needed to convert the
             pixels in RING ordering to NEST inside the datavector.
-        gamma2_signs: Signs for gamma2 that come from mirroring the survey patch, needed for Metacal only.
+        gamma2_signs: Signs for gamma2 that come from mirroring the survey patch, needed for WL only.
     """
     conf = load_config(conf)
 
@@ -90,7 +90,7 @@ def load_pixel_file(conf=None):
         # WL sample: weak lensing
         wl_tomo_patches_pix = []
         wl_tomo_corresponding_pix = []
-        for z_bin in conf["survey"]["lensing"]["z_bins"]:
+        for z_bin in conf["survey"]["WL"]["z_bins"]:
             # shape (n_bins, pix_in_bin)
             dset = f"wl/patches/{z_bin}"
             print(dset, dset in f.keys(), f.keys())
@@ -107,7 +107,7 @@ def load_pixel_file(conf=None):
         # GC sample: galaxy clustering
         gc_tomo_patches_pix = []
         gc_tomo_corresponding_pix = []
-        for z_bin in conf["survey"]["clustering"]["z_bins"]:
+        for z_bin in conf["survey"]["GC"]["z_bins"]:
             patches_pix = f[f"gc/patches/{z_bin}"][:]
             corresponding_pix = f[f"gc/patch_to_data_vec/{z_bin}"][:]
 
@@ -151,21 +151,21 @@ def get_clustering_systematics(conf=None, pixel_type="data_vector", apply_smooth
 
     with h5py.File(pixel_file, "r") as f:
         tomo_sys = []
-        for z_bin in conf["survey"]["clustering"]["z_bins"]:
-            tomo_sys.append(f[f"maglim/systematics/{pixel_type}/{z_bin}"][:])
+        for z_bin in conf["survey"]["GC"]["z_bins"]:
+            tomo_sys.append(f[f"GC/systematics/{pixel_type}/{z_bin}"][:])
 
     if apply_smoothing:
         # constants
         data_vec_pix, patches_pix_dict, _, _ = load_pixel_file(conf)
         n_side = conf["analysis"]["n_side"]
         n_pix = hp.nside2npix(n_side)
-        tomo_l_min = conf["analysis"]["scale_cuts"]["maglim"]["l_min"]
-        tomo_theta_fwhm = conf["analysis"]["scale_cuts"]["maglim"]["theta_fwhm"]
+        tomo_l_min = conf["analysis"]["scale_cuts"]["GC"]["l_min"]
+        tomo_theta_fwhm = conf["analysis"]["scale_cuts"]["GC"]["theta_fwhm"]
 
         for sys, l_min, theta_fwhm in zip(tomo_sys, tomo_l_min, tomo_theta_fwhm):
             if pixel_type == "map":
                 # populate the survey footprint
-                base_patch_pix = patches_pix_dict["maglim"][0]
+                base_patch_pix = patches_pix_dict["GC"][0]
                 sys_map = np.zeros(n_pix)
                 sys_map[base_patch_pix] = sys
                 sys = scales.map_to_smoothed_map(sys_map, n_side, l_min, theta_fwhm=theta_fwhm)
@@ -190,32 +190,32 @@ def get_tomo_dv_masks(conf=None):
             passed through) or None (the default config is loaded). Defaults to None.
 
     Returns:
-        dict: For "metacal" (tomographic) and "maglim" (non-tomographic), mask array of shape (n_pix, n_z_bins) that
+        dict: For "WL" (tomographic) and "GC" (non-tomographic), mask array of shape (n_pix, n_z_bins) that
             is zero for the padding and one for the data.
     """
     data_vec_pix, _, corresponding_pix_dict, _ = load_pixel_file(conf)
 
-    masks_metacal = []
+    masks_wl = []
     # loop over the tomographic bins
-    for pix in corresponding_pix_dict["metacal"]:
+    for pix in corresponding_pix_dict["wl"]:
         mask = np.zeros(len(data_vec_pix), dtype=np.int32)
         # loop over individual pixels
         for p in pix:
             mask[p] = 1
-        masks_metacal.append(mask)
+        masks_wl.append(mask)
 
-    masks_maglim = []
+    masks_gc = []
     # loop over the tomographic bins
-    for pix in corresponding_pix_dict["maglim"]:
+    for pix in corresponding_pix_dict["gc"]:
         mask = np.zeros(len(data_vec_pix), dtype=np.int32)
         # loop over individual pixels
         for p in pix:
             mask[p] = 1
-        masks_maglim.append(mask)
+        masks_gc.append(mask)
 
     masks_dict = {
-        "metacal": np.array(masks_metacal).T,
-        "maglim": np.array(masks_maglim).T,
+        "WL": np.array(masks_wl).T,
+        "GC": np.array(masks_gc).T,
     }
 
     return masks_dict
@@ -256,12 +256,12 @@ def get_tomo_masks(conf=None, nest_out=True):
 def get_mask(conf=None, nest_out=True):
     masks_dict = get_tomo_masks(conf, nest_out)
 
-    assert np.all(masks_dict["metacal"] == masks_dict["maglim"]), "The masks for metacal and maglim should be the same"
+    assert np.all(masks_dict["WL"] == masks_dict["GC"]), "The masks for WL and GC should be the same"
     assert np.all(
-        masks_dict["metacal"] == masks_dict["metacal"][:, 0][:, None]
+        masks_dict["WL"] == masks_dict["WL"][:, 0][:, None]
     ), "The mask should be the same for all tomographic bins"
 
-    return masks_dict["metacal"][:, 0].astype(bool)
+    return masks_dict["WL"][:, 0].astype(bool)
 
 
 def load_noise_file(conf=None):
@@ -284,7 +284,7 @@ def load_noise_file(conf=None):
 
     with h5py.File(noise_file, "r") as f:
         tomo_gamma_cat = []
-        for z_bin in conf["survey"]["lensing"]["z_bins"]:
+        for z_bin in conf["survey"]["WL"]["z_bins"]:
             # shape (n_gal, 3) with e1, e2, w
             gamma_cat = f[f"{z_bin}/cat"][:]
 
@@ -298,7 +298,7 @@ def load_redshift_distributions(galaxy_sample, conf=None):
     """Load the redshift distributions from disk to memory.
 
     Args:
-        galaxy_sample (str): Either "metacal" or "maglim".
+        galaxy_sample (str): Either "lensing" or "clustering".
         conf (str, dict, optional): Can be either a string (a config.yaml is read in), a dictionary (the config is
             passed through) or None (the default config is loaded). The relative paths are stored here. Defaults to
             None.
@@ -306,7 +306,7 @@ def load_redshift_distributions(galaxy_sample, conf=None):
     Returns:
         list: Per redshift bin z an nz values of the distribution.
     """
-    assert galaxy_sample in ["maglim", "metacal"]
+    assert galaxy_sample in ["WL", "GC"]
 
     conf = load_config(conf)
 
@@ -319,7 +319,7 @@ def load_redshift_distributions(galaxy_sample, conf=None):
     tomo_z = []
     tomo_nz = []
     for i_tomo in range(1, n_z_bins + 1):
-        z_dist_file = filenames.get_filename_z_distribution(redshift_dir, galaxy_sample, i_tomo)
+        z_dist_file = filenames.get_filename_z_distribution(conf, redshift_dir, galaxy_sample, i_tomo)
         z_dist = np.loadtxt(z_dist_file)
 
         tomo_z.append(z_dist[:, 0])
