@@ -47,7 +47,7 @@ Notebooks for generating contents of the `data` directory.
 
 
 ### `pipelines`
-Submission commands for distributed HPC execution via [`esub-epipe`](https://cosmo-gitlab.phys.ethz.ch/cosmo_public/esub-epipe).
+Example commands for production runs.
 
 ## Companion Repositories
 - Informative map-level neural summary statistics: [`euclid-deep-lss`](https://github.com/tomaszkacprzak/euclid-deep-lss/)
