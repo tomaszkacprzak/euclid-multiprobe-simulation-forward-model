@@ -17,12 +17,12 @@ Requires Python >= 3.8, TensorFlow >= 2.0, and TensorFlow-Probability.
 
 *On HPC clusters with pre-installed TensorFlow* (recommended):
 ```bash
-pip install -e .
+uv pip install -e .
 ```
 
 *On systems without TensorFlow*:
 ```bash
-pip install -e .[tf]
+uv pip install -e .[tf]
 ```
 
 Use the first option when TensorFlow is available via system modules (e.g., `module load tensorflow`) to preserve optimized GPU/MPI configurations.
@@ -41,10 +41,13 @@ Configuration files for cosmological and astrophysical paremeter priors, fixed s
 CosmoGridV1 properties, survey masks, and catalog ellipticities used in the shape noise generation. Note: `DESY3_noise_v11.h5` exceeds the repo's file size limit and must be generated from the source galaxy catalog via `notebooks/noise_file.ipynb`.
 
 ### `notebooks`
-Notebooks for generating contents of the `data` directory.
+Notebooks for generating contents of the `data` directory. 
+- `pixel_file.ipynb` - Generate tomographic pixel masks for probes, including symmetric replications.
+- `noise_file.ipynb` - Generate shape noise, only used for DESy3.
+
 
 ### `pipelines`
-Submission commands for distributed HPC execution via [`esub-epipe`](https://cosmo-gitlab.phys.ethz.ch/cosmo_public/esub-epipe).
+Example commands for production runs.
 
 ## Companion Repositories
 - Informative map-level neural summary statistics: [`euclid-deep-lss`](https://github.com/tomaszkacprzak/euclid-deep-lss/)
