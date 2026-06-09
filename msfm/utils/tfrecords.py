@@ -65,7 +65,7 @@ def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal
         features["n_pix"] = _int64_feature(kg.shape[0])
         features["n_z_metacal"] = _int64_feature(kg.shape[1])
         for i, sn in enumerate(sn_realz):
-            features[f"kg_{i}"] = _bytes_feature(tf.io.serialize_tensor(kg + sn))
+            features[f"kg_{i}"] = _bytes_feature(tf.io.serialize_tensor(kg + sn)) # here we add the noise map to the signal map
 
     if dg is not None and pn_realz is not None:
         assert dg.shape == pn_realz.shape[1:]

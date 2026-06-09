@@ -250,8 +250,8 @@ def get_shapes_from_cat(conf):
         """
 
         n_side = conf["analysis"]["n_side"]
-        R_gamma = conf["survey"]["lensing"]["R_gamma"]
-        R_s = conf["survey"]["lensing"]["R_s"]
+        R_gamma = conf["survey"]["WL"]["R_gamma"]
+        R_s = conf["survey"]["WL"]["R_s"]
 
         cat_dir = conf["dirs"]["catalog"]
 
@@ -259,7 +259,7 @@ def get_shapes_from_cat(conf):
         index = h5py.File(f"{cat_dir}/DESY3_indexcat.h5", "r")
         gold = h5py.File(f"{cat_dir}/DESY3_GOLD_2_2.1.h5", "r")
 
-        n_z = len(conf["survey"]["lensing"]["z_bins"])
+        n_z = len(conf["survey"]["WL"]["z_bins"])
 
         for i in range(n_z):
             metacal_bin = index[f"/index/select_bin{i+1}"][:]
@@ -305,10 +305,10 @@ def get_shapes_from_cat(conf):
         sigma_e = 0.2
         area_deg2 = np.sum(mask) * hp.nside2pixarea(n_side, degrees=True)
 
-        n_z = len(conf["survey"]["lensing"]["z_bins"])
+        n_z = len(conf["survey"]["WL"]["z_bins"])
         for i in range(n_z):
 
-            n_gal = int(conf["survey"]["lensing"]["n_gal"][i] * area_deg2)
+            n_gal = int(conf["survey"]["WL"]["n_gal"][i] * area_deg2)
 
             LOGGER.info(f"WL bin {i+1}: N_gal = {n_gal}")
 

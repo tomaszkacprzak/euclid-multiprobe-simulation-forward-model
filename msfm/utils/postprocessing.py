@@ -287,8 +287,8 @@ def postprocess_lensing(kappa_full_sky, conf, pixel_file, i_z):
 
     # pixel file
     data_vec_pix, patches_pix_dict, corresponding_pix_dict, gamma2_signs = pixel_file
-    patches_pix = patches_pix_dict["WL"][i_z]
-    corresponding_pix = corresponding_pix_dict["WL"][i_z]
+    patches_pix = patches_pix_dict["wl"][i_z]
+    corresponding_pix = corresponding_pix_dict["wl"][i_z]
     data_vec_len = len(data_vec_pix)
     base_patch_pix = patches_pix[0]
 
@@ -361,8 +361,8 @@ def postprocess_shape_noise(
 
     # pixel file
     data_vec_pix, patches_pix_dict, corresponding_pix_dict, _ = pixel_file
-    patches_pix = patches_pix_dict["WL"][i_z]
-    corresponding_pix = corresponding_pix_dict["WL"][i_z]
+    patches_pix = patches_pix_dict["wl"][i_z]
+    corresponding_pix = corresponding_pix_dict["wl"][i_z]
     data_vec_len = len(data_vec_pix)
     base_patch_pix = patches_pix[0]
 
@@ -374,7 +374,7 @@ def postprocess_shape_noise(
     sc_mode = conf["analysis"]["modelling"]["WL"]["source_clustering"]
 
     if sc_mode == "fixed":
-        tomo_bias = files.read_metacal_bias(bgs_key, conf)
+        tomo_bias = files.read_source_clustering_bias(bgs_key, conf)
         bias = tomo_bias[i_z]
     elif sc_mode == "prior":
         bias = None  # will be sampled per patch
@@ -520,32 +520,8 @@ def _get_full_sky_perm(args, conf, cosmo_dir_in, i_perm):
     with_bary = conf["analysis"]["modelling"]["baryonified"]
 
     # prepare the full sky input file
-    perm_dir_in = os.path.join(cosmo_dir_in, f"perm_{i_perm:04d}")
+    perm_dir_in = os.path.join(cosmo_dir_in,  f"perm_{i_perm:04d}")
     full_maps_file = filenames.get_filename_full_maps(perm_dir_in, with_bary=with_bary, version=args.cosmogrid_version)
-
-    if args.from_san:
-        san_conf = conf["dirs"]["connections"]["san"]
-        local_scratch_dir = os.environ["TMPDIR"]
-
-        t0_rsync = time.time()
-        with copy_guardian.BoundedSemaphore(san_conf["max_connections"], timeout=san_conf["timeout"]):
-            connection = copy_guardian.Connection(
-                host=san_conf["host"],
-                user=san_conf["user"],
-                private_key=san_conf["private_key"],
-                port=san_conf["port"],
-            )
-            # overwrite the local scratch file within the loop iterations
-            connection.rsync_from(full_maps_file, local_scratch_dir)
-
-        tdelta_rsync = time.time() - t0_rsync
-        LOGGER.info(f"Rsynced {full_maps_file} to {local_scratch_dir} after {tdelta_rsync:.2f}s")
-        assert (
-            tdelta_rsync > 1 or args.debug
-        ), f"Rsync took only {tdelta_rsync:.2f}s, which indicates that nothing was actually transferred"
-        full_maps_file = filenames.get_filename_full_maps(
-            local_scratch_dir, with_bary=with_bary, version=args.cosmogrid_version
-        )
 
     return full_maps_file
 

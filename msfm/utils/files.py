@@ -93,23 +93,22 @@ def load_pixel_file(conf=None):
         for z_bin in conf["survey"]["WL"]["z_bins"]:
             # shape (n_bins, pix_in_bin)
             dset = f"wl/patches/{z_bin}"
-            print(dset, dset in f.keys(), f.keys())
             patches_pix = f[dset][:]
             # shape (pix_in_bin,)
-            corresponding_pix = f[f"wl/patch_to_data_vec/{z_bin}"][:]
+            corresponding_pix = f[f"WL/patch_to_data_vec/{z_bin}"][:]
 
             wl_tomo_patches_pix.append(patches_pix)
             wl_tomo_corresponding_pix.append(corresponding_pix)
 
         # to correct the shear for patch cut outs that have been mirrored
-        gamma2_signs = f["wl/gamma_2_sign"][:]
+        gamma2_signs = f["WL/gamma_2_sign"][:]
 
         # GC sample: galaxy clustering
         gc_tomo_patches_pix = []
         gc_tomo_corresponding_pix = []
         for z_bin in conf["survey"]["GC"]["z_bins"]:
-            patches_pix = f[f"gc/patches/{z_bin}"][:]
-            corresponding_pix = f[f"gc/patch_to_data_vec/{z_bin}"][:]
+            patches_pix = f[f"GC/patches/{z_bin}"][:]
+            corresponding_pix = f[f"GC/patch_to_data_vec/{z_bin}"][:]
 
             gc_tomo_patches_pix.append(patches_pix)
             gc_tomo_corresponding_pix.append(corresponding_pix)
@@ -118,12 +117,12 @@ def load_pixel_file(conf=None):
 
     # package into dictionaries
     patches_pix_dict = {}
-    patches_pix_dict["wl"] = wl_tomo_patches_pix
-    patches_pix_dict["gc"] = gc_tomo_patches_pix
+    patches_pix_dict["WL"] = wl_tomo_patches_pix
+    patches_pix_dict["GC"] = gc_tomo_patches_pix
 
     corresponding_pix_dict = {}
-    corresponding_pix_dict["wl"] = wl_tomo_corresponding_pix
-    corresponding_pix_dict["gc"] = gc_tomo_corresponding_pix
+    corresponding_pix_dict["WL"] = wl_tomo_corresponding_pix
+    corresponding_pix_dict["GC"] = gc_tomo_corresponding_pix
 
     return data_vec_pix, patches_pix_dict, corresponding_pix_dict, gamma2_signs
 
@@ -328,13 +327,13 @@ def load_redshift_distributions(galaxy_sample, conf=None):
     return tomo_z, tomo_nz
 
 
-def read_metacal_bias(key, conf=None):
+def read_source_clustering_bias(key, conf=None):
     conf = load_config(conf)
 
     file_dir = os.path.dirname(__file__)
     repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
-    metacal_bias_file = os.path.join(repo_dir, conf["files"]["metacal_bias"])
-    with h5py.File(metacal_bias_file, "r") as f:
-        metacal_bias = f[key][:]
+    source_clustering_bias_file = os.path.join(repo_dir, conf["files"]["source_clustering_bias"])
+    with h5py.File(source_clustering_bias_file, "r") as f:
+        source_clustering_bias = f[key][:]
 
-    return np.array(metacal_bias)
+    return np.array(source_clustering_bias)
