@@ -19,7 +19,7 @@ Meant for
 
 import numpy as np
 import tensorflow as tf
-import os, argparse, warnings, time, yaml, h5py, pickle, glob
+import os, argparse, warnings, time, yaml, h5py, pickle, glob, sys
 
 from scipy.stats import qmc
 from sobol_seq import i4_sobol
@@ -49,32 +49,6 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
 
-
-def resources(args):
-    args = setup(args)
-
-    if args.cluster == "perlmutter":
-        # because of hyperthreading, there's a total of 256 threads per node
-        resources = {
-            "main_time": 8,
-            "main_n_cores": 8,
-            "main_memory": 1952,
-            "main_scratch": 0,
-            "merge_time": 16,
-            "merge_n_cores": 32,
-            "merge_memory": 1952,
-            "merge_scratch": 0,
-        }
-    elif args.cluster == "euler":
-        resources = {"main_time": 4, "main_memory": 4096, "main_n_cores": 4, "merge_memory": 4096, "merge_n_cores": 16}
-
-        if args.from_san:
-            # in MB. One projected_probes_maps_v11dmb.h5 should be around 1 GB
-            resources["main_scratch"] = 4096
-        else:
-            resources["main_scratch"] = 0
-
-    return resources
 
 
 def setup(args):
@@ -139,6 +113,14 @@ def setup(args):
         choices=("critical", "error", "warning", "info", "debug"),
         help="logging level",
     )
+
+    parser.add_argument(
+        "--indices", 
+        type=str, 
+        default="0", 
+        help="Indices to process, format: 0,1,2,4 or start>stop. Default is 0.")
+
+    
     parser.add_argument("--debug", action="store_true", help="activate debug mode")
 
     args, _ = parser.parse_known_args(args)
@@ -171,8 +153,7 @@ def setup(args):
 
 
 def main(indices, args):
-    args = setup(args)
-
+    
     LOGGER.timer.start("main")
     LOGGER.info(f"Got index set of size {len(indices)}")
 
@@ -463,7 +444,7 @@ def main(indices, args):
             postprocessing._rsync_tfrecord_to_san(conf, tfr_file, san_dir_out)
 
         LOGGER.info(f"Done with index {index} after {LOGGER.timer.elapsed('index')}")
-        yield index
+        
 
 
 def _data_vector_smoothing(dv, l_min, l_max, theta_fwhm, np_seed, conf, pixel_file, mask):
@@ -833,3 +814,38 @@ def merge(indices, args):
             f["i_noise"][i] = i_noise
 
     LOGGER.info(f"Done with merging of the grid power spectra")
+
+if __name__ == "__main__":
+
+    args = setup(sys.argv[1:])
+    main(args.indices, args=args)
+
+
+# Code graveyard
+
+
+# def resources(args):
+#     args = setup(args)
+
+#     if args.cluster == "perlmutter":
+#         # because of hyperthreading, there's a total of 256 threads per node
+#         resources = {
+#             "main_time": 8,
+#             "main_n_cores": 8,
+#             "main_memory": 1952,
+#             "main_scratch": 0,
+#             "merge_time": 16,
+#             "merge_n_cores": 32,
+#             "merge_memory": 1952,
+#             "merge_scratch": 0,
+#         }
+#     elif args.cluster == "euler":
+#         resources = {"main_time": 4, "main_memory": 4096, "main_n_cores": 4, "merge_memory": 4096, "merge_n_cores": 16}
+
+#         if args.from_san:
+#             # in MB. One projected_probes_maps_v11dmb.h5 should be around 1 GB
+#             resources["main_scratch"] = 4096
+#         else:
+#             resources["main_scratch"] = 0
+
+#     return resources

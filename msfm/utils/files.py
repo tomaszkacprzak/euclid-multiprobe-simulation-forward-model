@@ -75,49 +75,55 @@ def load_pixel_file(conf=None):
     """
     conf = load_config(conf)
 
-    file_dir = os.path.dirname(__file__)
-    repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
-    pixel_file = os.path.join(repo_dir, conf["files"]["pixels"])
+    if os.path.isabs(conf["files"]["pixels"]):
+        pixel_file = conf["files"]["pixels"]
+    else:
+        file_dir = os.path.dirname(__file__)
+        repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
+        pixel_file = os.path.join(repo_dir, conf["files"]["pixels"])
+    LOGGER.info(f"Loading the pixel file from {pixel_file}")
 
     with h5py.File(pixel_file, "r") as f:
         # pixel indices of padded data vector
         data_vec_pix = f["data_vec"][:]
 
-        # Metacal sample: weak lensing
-        metacal_tomo_patches_pix = []
-        metacal_tomo_corresponding_pix = []
+        # WL sample: weak lensing
+        wl_tomo_patches_pix = []
+        wl_tomo_corresponding_pix = []
         for z_bin in conf["survey"]["lensing"]["z_bins"]:
-            # shape (4, pix_in_bin)
-            patches_pix = f[f"metacal/patches/{z_bin}"][:]
+            # shape (n_bins, pix_in_bin)
+            dset = f"wl/patches/{z_bin}"
+            print(dset, dset in f.keys(), f.keys())
+            patches_pix = f[dset][:]
             # shape (pix_in_bin,)
-            corresponding_pix = f[f"metacal/patch_to_data_vec/{z_bin}"][:]
+            corresponding_pix = f[f"wl/patch_to_data_vec/{z_bin}"][:]
 
-            metacal_tomo_patches_pix.append(patches_pix)
-            metacal_tomo_corresponding_pix.append(corresponding_pix)
+            wl_tomo_patches_pix.append(patches_pix)
+            wl_tomo_corresponding_pix.append(corresponding_pix)
 
         # to correct the shear for patch cut outs that have been mirrored
-        gamma2_signs = f["metacal/gamma_2_sign"][:]
+        gamma2_signs = f["wl/gamma_2_sign"][:]
 
-        # Maglim sample: galaxy clustering
-        maglim_tomo_patches_pix = []
-        maglim_tomo_corresponding_pix = []
+        # GC sample: galaxy clustering
+        gc_tomo_patches_pix = []
+        gc_tomo_corresponding_pix = []
         for z_bin in conf["survey"]["clustering"]["z_bins"]:
-            patches_pix = f[f"maglim/patches/{z_bin}"][:]
-            corresponding_pix = f[f"maglim/patch_to_data_vec/{z_bin}"][:]
+            patches_pix = f[f"gc/patches/{z_bin}"][:]
+            corresponding_pix = f[f"gc/patch_to_data_vec/{z_bin}"][:]
 
-            maglim_tomo_patches_pix.append(patches_pix)
-            maglim_tomo_corresponding_pix.append(corresponding_pix)
+            gc_tomo_patches_pix.append(patches_pix)
+            gc_tomo_corresponding_pix.append(corresponding_pix)
 
     LOGGER.debug(f"Loaded the pixel file {pixel_file}")
 
     # package into dictionaries
     patches_pix_dict = {}
-    patches_pix_dict["metacal"] = metacal_tomo_patches_pix
-    patches_pix_dict["maglim"] = maglim_tomo_patches_pix
+    patches_pix_dict["wl"] = wl_tomo_patches_pix
+    patches_pix_dict["gc"] = gc_tomo_patches_pix
 
     corresponding_pix_dict = {}
-    corresponding_pix_dict["metacal"] = metacal_tomo_corresponding_pix
-    corresponding_pix_dict["maglim"] = maglim_tomo_corresponding_pix
+    corresponding_pix_dict["wl"] = wl_tomo_corresponding_pix
+    corresponding_pix_dict["gc"] = gc_tomo_corresponding_pix
 
     return data_vec_pix, patches_pix_dict, corresponding_pix_dict, gamma2_signs
 

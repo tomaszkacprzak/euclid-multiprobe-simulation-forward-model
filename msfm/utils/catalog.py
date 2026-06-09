@@ -1,6 +1,7 @@
 import os, h5py
 import numpy as np
 import healpy as hp
+from pathlib import Path
 
 from msfm.utils import logger, files
 
@@ -233,45 +234,93 @@ def build_maglim_map_from_cat(conf, debug=True, force_recompute=False):
 def get_shapes_from_cat(conf):
     conf = files.load_config(conf)
 
-    n_side = conf["analysis"]["n_side"]
-    R_gamma = conf["survey"]["lensing"]["R_gamma"]
-    R_s = conf["survey"]["lensing"]["R_s"]
+    if conf['survey']['name'] == 'DESy3':
 
-    cat_dir = conf["dirs"]["catalog"]
+        n_side = conf["analysis"]["n_side"]
+        R_gamma = conf["survey"]["lensing"]["R_gamma"]
+        R_s = conf["survey"]["lensing"]["R_s"]
 
-    metacal = h5py.File(f"{cat_dir}/DESY3_metacal_v03-004.h5", "r")
-    index = h5py.File(f"{cat_dir}/DESY3_indexcat.h5", "r")
-    gold = h5py.File(f"{cat_dir}/DESY3_GOLD_2_2.1.h5", "r")
+        cat_dir = conf["dirs"]["catalog"]
 
-    n_z = len(conf["survey"]["lensing"]["z_bins"])
-    gamma_1 = []
-    gamma_2 = []
-    weight = []
-    pixels = []
-    for i in range(n_z):
-        metacal_bin = index[f"/index/select_bin{i+1}"][:]
-        LOGGER.info(f"Metacalibration bin {i+1}: N_gal = {len(metacal_bin)}")
+        metacal = h5py.File(f"{cat_dir}/DESY3_metacal_v03-004.h5", "r")
+        index = h5py.File(f"{cat_dir}/DESY3_indexcat.h5", "r")
+        gold = h5py.File(f"{cat_dir}/DESY3_GOLD_2_2.1.h5", "r")
 
-        # positions
-        dec = gold["/catalog/gold/dec"][:][metacal_bin]
-        ra = gold["/catalog/gold/ra"][:][metacal_bin]
+        n_z = len(conf["survey"]["lensing"]["z_bins"])
+        gamma_1 = []
+        gamma_2 = []
+        weight = []
+        pixels = []
+        for i in range(n_z):
+            metacal_bin = index[f"/index/select_bin{i+1}"][:]
+            LOGGER.info(f"Metacalibration bin {i+1}: N_gal = {len(metacal_bin)}")
 
-        pix = survey_angles_to_pix(conf, ra, dec, n_side)
+            # positions
+            dec = gold["/catalog/gold/dec"][:][metacal_bin]
+            ra = gold["/catalog/gold/ra"][:][metacal_bin]
 
-        # properties
-        e1 = metacal["/catalog/unsheared/e_1"][:][metacal_bin]
-        e2 = metacal["/catalog/unsheared/e_2"][:][metacal_bin]
-        w = metacal["/catalog/unsheared/weight"][:][metacal_bin]
+            pix = survey_angles_to_pix(conf, ra, dec, n_side)
 
-        # we include the shear response factor from eq. (4) in https://arxiv.org/pdf/2105.13543 here for simplicity
-        # since this is a per-bin (not per-object) quantity
-        gamma_1.append(e1 / (R_gamma[i] + R_s[i]))
-        gamma_2.append(e2 / (R_gamma[i] + R_s[i]))
-        weight.append(w)
-        pixels.append(pix)
+            # properties
+            e1 = metacal["/catalog/unsheared/e_1"][:][metacal_bin]
+            e2 = metacal["/catalog/unsheared/e_2"][:][metacal_bin]
+            w = metacal["/catalog/unsheared/weight"][:][metacal_bin]
 
-    metacal.close()
-    index.close()
-    gold.close()
+            # we include the shear response factor from eq. (4) in https://arxiv.org/pdf/2105.13543 here for simplicity
+            # since this is a per-bin (not per-object) quantity
+            gamma_1.append(e1 / (R_gamma[i] + R_s[i]))
+            gamma_2.append(e2 / (R_gamma[i] + R_s[i]))
+            weight.append(w)
+            pixels.append(pix)
+
+        metacal.close()
+        index.close()
+        gold.close()
+
+    elif conf['survey']['name'] == 'EuclidDR1F':
+        """
+        Generate shape catalog for Euclid DR1F (DR1 Forecast) from scratch.
+        Use random shapes drawn from truncated normal distribution with fixed sigma_e.
+        Use footprint from DR1 (Euclid DR1wideNorth_moc.fits + Euclid DR1wideSouth_moc.fits, priv. comm. Will Hartley)
+        Use unity statistical weights.
+        """
+
+        from scipy.stats import truncnorm
+
+        cat_dir = Path(conf["dirs"]["catalog"])
+        n_side = conf["analysis"]["n_side"]
+        mask = np.load(cat_dir / "Euclid_DR1wide_healpix.npy")
+        mask = hp.udgrade(mask, nside_out=n_side, power=-2) > 0
+        mask_inds = np.flatnonzero(mask)
+        sigma_e = 0.2
+        area_deg2 = np.sum(mask) * hp.nside2pixarea(n_side, degrees=True)
+
+        n_z = len(conf["survey"]["lensing"]["z_bins"])
+        for i in range(n_z):
+
+            n_gal = conf["survey"]["lensing"]["n_gal"][i] * area_deg2
+
+            LOGGER.info(f"WK bin {i+1}: N_gal = {n_gal}")
+
+            pix = np.random.choice(mask_inds, size=n_gal, replace=True)
+
+            ra = hp.pix2ang(n_side, pix, lonlat=True)[0]
+            dec = hp.pix2ang(n_side, pix, lonlat=True)[1]
+
+            e_abs = truncnorm(a=-1, b=1, loc=0, scale=sigma_e).rvs(size=n_gal)
+            e_ang = np.random.uniform(high=0, low=2*np.pi, size=n_gal)
+            
+            e = e_abs * np.exp(1j * e_ang)
+            e1, e2 = np.real(e), np.imag(e)
+            w = np.ones(n_gal)
+
+            gamma_1.append(e1)
+            gamma_2.append(e2)
+            weight.append(w)
+            pixels.append(pix)
+
+    else:
+
+        raise ValueError(f"Survey {conf['survey']['name']} not supported")
 
     return gamma_1, gamma_2, weight, pixels
