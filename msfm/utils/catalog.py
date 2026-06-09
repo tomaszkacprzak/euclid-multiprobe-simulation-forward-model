@@ -232,9 +232,22 @@ def build_maglim_map_from_cat(conf, debug=True, force_recompute=False):
 
 
 def get_shapes_from_cat(conf):
-    conf = files.load_config(conf)
+    """
+    Generate shape catalog for the WL samples for forward modelling.
+    :param conf: Configuration dictionary.
+    :return: gamma_1, gamma_2, weight, pixels
+    """
 
+    conf = files.load_config(conf)
+    gamma_1 = []
+    gamma_2 = []
+    weight = []
+    pixels = []
+    
     if conf['survey']['name'] == 'DESy3':
+        """
+        Standard DESy3 metacal perscription.
+        """
 
         n_side = conf["analysis"]["n_side"]
         R_gamma = conf["survey"]["lensing"]["R_gamma"]
@@ -247,10 +260,7 @@ def get_shapes_from_cat(conf):
         gold = h5py.File(f"{cat_dir}/DESY3_GOLD_2_2.1.h5", "r")
 
         n_z = len(conf["survey"]["lensing"]["z_bins"])
-        gamma_1 = []
-        gamma_2 = []
-        weight = []
-        pixels = []
+
         for i in range(n_z):
             metacal_bin = index[f"/index/select_bin{i+1}"][:]
             LOGGER.info(f"Metacalibration bin {i+1}: N_gal = {len(metacal_bin)}")
@@ -290,7 +300,7 @@ def get_shapes_from_cat(conf):
         cat_dir = Path(conf["dirs"]["catalog"])
         n_side = conf["analysis"]["n_side"]
         mask = np.load(cat_dir / "Euclid_DR1wide_healpix.npy")
-        mask = hp.udgrade(mask, nside_out=n_side, power=-2) > 0
+        mask = hp.ud_grade(mask, nside_out=n_side, power=-2) > 0
         mask_inds = np.flatnonzero(mask)
         sigma_e = 0.2
         area_deg2 = np.sum(mask) * hp.nside2pixarea(n_side, degrees=True)
@@ -298,21 +308,21 @@ def get_shapes_from_cat(conf):
         n_z = len(conf["survey"]["lensing"]["z_bins"])
         for i in range(n_z):
 
-            n_gal = conf["survey"]["lensing"]["n_gal"][i] * area_deg2
+            n_gal = int(conf["survey"]["lensing"]["n_gal"][i] * area_deg2)
 
-            LOGGER.info(f"WK bin {i+1}: N_gal = {n_gal}")
+            LOGGER.info(f"WL bin {i+1}: N_gal = {n_gal}")
 
-            pix = np.random.choice(mask_inds, size=n_gal, replace=True)
+            pix = np.random.choice(mask_inds, size=n_gal, replace=True).astype(np.int32)
 
             ra = hp.pix2ang(n_side, pix, lonlat=True)[0]
             dec = hp.pix2ang(n_side, pix, lonlat=True)[1]
 
-            e_abs = truncnorm(a=-1, b=1, loc=0, scale=sigma_e).rvs(size=n_gal)
-            e_ang = np.random.uniform(high=0, low=2*np.pi, size=n_gal)
+            e_abs = truncnorm(a=-1, b=1, loc=0, scale=sigma_e).rvs(size=n_gal).astype(np.float32)
+            e_ang = np.random.uniform(high=0, low=2*np.pi, size=n_gal).astype(np.float32)
             
             e = e_abs * np.exp(1j * e_ang)
             e1, e2 = np.real(e), np.imag(e)
-            w = np.ones(n_gal)
+            w = np.ones(n_gal).astype(np.float32)
 
             gamma_1.append(e1)
             gamma_2.append(e2)
