@@ -361,8 +361,8 @@ def postprocess_shape_noise(
 
     # pixel file
     data_vec_pix, patches_pix_dict, corresponding_pix_dict, _ = pixel_file
-    patches_pix = patches_pix_dict["wl"][i_z]
-    corresponding_pix = corresponding_pix_dict["wl"][i_z]
+    patches_pix = patches_pix_dict["WL"][i_z]
+    corresponding_pix = corresponding_pix_dict["WL"][i_z]
     data_vec_len = len(data_vec_pix)
     base_patch_pix = patches_pix[0]
 
