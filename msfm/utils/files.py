@@ -196,7 +196,7 @@ def get_tomo_dv_masks(conf=None):
 
     masks_wl = []
     # loop over the tomographic bins
-    for pix in corresponding_pix_dict["wl"]:
+    for pix in corresponding_pix_dict["WL"]:
         mask = np.zeros(len(data_vec_pix), dtype=np.int32)
         # loop over individual pixels
         for p in pix:
@@ -205,7 +205,7 @@ def get_tomo_dv_masks(conf=None):
 
     masks_gc = []
     # loop over the tomographic bins
-    for pix in corresponding_pix_dict["gc"]:
+    for pix in corresponding_pix_dict["GC"]:
         mask = np.zeros(len(data_vec_pix), dtype=np.int32)
         # loop over individual pixels
         for p in pix:
