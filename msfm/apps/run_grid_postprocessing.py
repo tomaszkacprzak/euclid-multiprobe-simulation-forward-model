@@ -341,7 +341,7 @@ def main(indices, args):
                             tomo_qbg = None
                         tomo_bg = redshift.get_tomo_amplitudes_according_to_config(conf, bg, n_bg, "gc")
                     elif per_bin_biasing:
-                        n_gc_bins = len(conf["analysis"]["modelling"]["GC"]["z_bins"])
+                        n_gc_bins = len(conf["survey"]["GC"]["z_bins"])
                         if quadratic_biasing:
                             # bg1, bg2, bg3, bg4, qbg1, qbg2, qbg3, qbg4 = astro_sample[-8:]
                             # tomo_qbg = np.array([qbg1, qbg2, qbg3, qbg4])

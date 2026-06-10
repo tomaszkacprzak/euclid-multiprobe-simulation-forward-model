@@ -20,6 +20,44 @@ hp = imports.import_healpy()
 
 LOGGER = logger.get_logger(__file__)
 
+# tools
+
+def convert_to_contrast(m, safe=False):
+    """
+    Convert map to contrast map, i.e. subtract the mean and divide by the mean, in-place.
+
+    Args:
+        m (np.ndarray): Map to convert to contrast.
+        safe (bool): If True, divide by the mean only if the mean is not zero. Defaults to False.
+
+    Returns:
+        np.ndarray: Contrast map.
+    """
+
+    m_mean = np.mean(m)
+    np.subtract(m, m_mean, out=m)
+    if safe:
+        np.divide(m, m_mean, out=m, where=m_mean!=0)
+    else:
+        np.divide(m, m_mean, out=m)
+
+    return m
+
+def convert_to_zero_mean(m):
+    """
+    Convert map to zero-mean map, i.e. subtract the mean, in-place.
+
+    Args:
+        m (np.ndarray): Map to convert to zero-mean.
+
+    Returns:
+        np.ndarray: Zero-mean map.
+    """
+    m_mean = np.mean(m)
+    np.subtract(m, m_mean, out=m)
+    return m
+   
+
 # fiducial ############################################################################################################
 
 
@@ -269,9 +307,12 @@ def postprocess_wl_bin(
         )
     elif in_map_type == "dg" and out_map_type == "ds":
         full_sky_ia = _read_full_sky_bin(conf, full_maps_file, "ia", conf["survey"]["WL"]["z_bins"][i_z])
-        full_sky_ds = (full_sky_ia - np.mean(full_sky_ia)) * (
-            (full_sky_map - np.mean(full_sky_map)) / np.mean(full_sky_map)
-        )
+        convert_to_contrast(full_sky_map)
+        convert_to_zero_mean(full_sky_ia)
+        full_sky_ds = full_sky_ia * full_sky_map
+        # full_sky_ds = (full_sky_ia - np.mean(full_sky_ia)) * (
+        #     (full_sky_map - np.mean(full_sky_map)) / np.mean(full_sky_map)
+        # )
         # shape (n_patches, data_vec_len)
         kappa_dvs = postprocess_lensing(full_sky_ds, conf, pixel_file, i_z)
     else:
@@ -306,21 +347,24 @@ def postprocess_lensing(kappa_full_sky, conf, pixel_file, i_z):
     )
 
     gamma_alm = kappa_alm * kappa2gamma_fac
+    dummy_alm = np.zeros_like(gamma_alm)
     _, gamma1_full, gamma2_full = hp.alm2map(
-        [np.zeros_like(gamma_alm), gamma_alm, np.zeros_like(gamma_alm)], nside=n_side
+        [dummy_alm, gamma_alm, dummy_alm], nside=n_side
     )
 
     kappa_dvs = np.zeros((n_patches, data_vec_len), dtype=np.float32)
+    gamma1_patch = np.zeros(n_pix, dtype=np.float32)
+    gamma2_patch = np.zeros(n_pix, dtype=np.float32)
     for i_patch, patch_pix in enumerate(patches_pix):
         # The 90° rots do NOT change the shear, however, the mirroring does,
         # therefore we have to swap sign of gamma2 for the last 2 patches!
         gamma2_sign = gamma2_signs[i_patch]
         LOGGER.debug(f"Using gamma2 sign {gamma2_sign} for patch index {i_patch}")
 
-        gamma1_patch = np.zeros(n_pix, dtype=np.float32)
+        gamma1_patch[:] = 0
         gamma1_patch[base_patch_pix] = gamma1_full[patch_pix]
 
-        gamma2_patch = np.zeros(n_pix, dtype=np.float32)
+        gamma2_patch[:] = 0
         gamma2_patch[base_patch_pix] = gamma2_full[patch_pix]
 
         # fix the sign
@@ -400,11 +444,12 @@ def postprocess_shape_noise(
         cat_dist = tfp.distributions.Empirical(samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1)
 
         # normalize to number density contrast
-        delta_full_sky_norm = (delta_full_sky - np.mean(delta_full_sky)) / np.mean(delta_full_sky)
+        # delta_full_sky_norm = (delta_full_sky - np.mean(delta_full_sky)) / np.mean(delta_full_sky)
+        convert_to_contrast(delta_full_sky)
 
         if sc_mode == "fixed":
             counts_full = clustering.galaxy_density_to_count(
-                n_bar, delta_full_sky_norm, bias, systematics_map=None
+                n_bar, delta_full_sky, bias, systematics_map=None
             ).astype(int)
             counts_full = np.random.poisson(counts_full).astype(int)
     else:
@@ -416,7 +461,7 @@ def postprocess_shape_noise(
         if sc_mode in ["fixed", "prior"]:
             if sc_mode == "prior" and bsc_samples is not None:
                 bias_patch = bsc_samples[(i_perm * n_patches) + i_patch]
-                delta_patch = delta_full_sky_norm[patch_pix]
+                delta_patch = delta_full_sky[patch_pix]
                 counts_patch = clustering.galaxy_density_to_count(
                     n_bar, delta_patch, bias_patch, systematics_map=None
                 ).astype(int)
@@ -433,12 +478,14 @@ def postprocess_shape_noise(
             )
 
         # not vectorized because of the healpy alm transform
+        gamma1_patch = np.zeros(n_pix, dtype=np.float32)
+        gamma2_patch = np.zeros(n_pix, dtype=np.float32)
         for i_noise in range(n_noise_per_signal):
             # full healpy map with zeros outside the footprint
-            gamma1_patch = np.zeros(n_pix, dtype=np.float32)
+            gamma1_patch[:] = 0
             gamma1_patch[base_patch_pix] = gamma1[:, i_noise]
 
-            gamma2_patch = np.zeros(n_pix, dtype=np.float32)
+            gamma2_patch[:] = 0
             gamma2_patch[base_patch_pix] = gamma2[:, i_noise]
 
             kappa_patch = lensing.mode_removal(
@@ -497,9 +544,10 @@ def postprocess_clustering(
         delta_full_sky = clustering.extend_sobol_sequence_by_stochasticity(conf, delta_full_sky, simset, i_sobol, rng)
 
     delta_dvs = np.zeros((n_patches, data_vec_len), dtype=np.float32)
+    delta_patch = np.zeros(n_pix, dtype=np.float32)
     for i_patch, patch_pix in enumerate(patches_pix):
         # always populate the same patch
-        delta_patch = np.zeros(n_pix, dtype=np.float32)
+        delta_patch[:] = 0
         delta_patch[base_patch_pix] = delta_full_sky[patch_pix]
 
         # cut out padded data vector
