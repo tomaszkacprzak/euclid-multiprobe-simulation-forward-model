@@ -49,7 +49,6 @@ warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
 
 
-
 def setup(args):
     description = "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tfrecord files"
     parser = argparse.ArgumentParser(description=description, add_help=True)
@@ -107,12 +106,9 @@ def setup(args):
     )
 
     parser.add_argument(
-        "--indices", 
-        type=str, 
-        default="0", 
-        help="Indices to process, format: 0,1,2,4 or start>stop. Default is 0.")
+        "--indices", type=str, default="0", help="Indices to process, format: 0,1,2,4 or start>stop. Default is 0."
+    )
 
-    
     parser.add_argument("--debug", action="store_true", help="activate debug mode")
 
     args, _ = parser.parse_known_args(args)
@@ -138,7 +134,7 @@ def setup(args):
 
 
 def main(indices, args):
-    
+
     LOGGER.timer.start("main")
     LOGGER.info(f"Got index set of size {len(indices)}")
 
@@ -262,7 +258,9 @@ def main(indices, args):
                 state_file = os.path.join(args.dir_out, f"program_state{i_cosmo:06}" + args.file_suffix + ".pkl")
 
                 i_sobol, cosmo = prior.extend_sobol_sequence(conf, cosmo_params_info, i_cosmo)
-                astro_samples = prior.sample_astro_parameters(astro_params, i_cosmo, n_examples_per_cosmo, n_noise_per_signal, astro_priors)
+                astro_samples = prior.sample_astro_parameters(
+                    astro_params, i_cosmo, n_examples_per_cosmo, n_noise_per_signal, astro_priors
+                )
 
                 bsc_samples = (
                     astro_samples[:, -1]
@@ -270,159 +268,169 @@ def main(indices, args):
                     else None
                 )
 
-                if args.debug and os.path.exists(state_file):
-                    with open(state_file, "rb") as f:
-                        state = pickle.load(f)
-                        data_vec_container = state["data_vec_container"]
-                    LOGGER.warning(f"Debug mode, reading the state from {state_file}")
-                else:
-                    # cut out the survey footprints, generate the shape noise, perform mode removal, ...
-                    data_vec_container = postprocessing.postprocess_grid_permutations(
-                        args, conf, cosmo_dir_in, pixel_file, noise_file, bsc_samples=bsc_samples
-                    )
-
-                    if args.debug:
+                for i_perm, data_vec_container in postprocessing.iter_postprocess_grid_permutations(
+                    args, conf, cosmo_dir_in, pixel_file, noise_file, bsc_samples=bsc_samples
+                ):
+                    perm_state_file = state_file.replace(".pkl", f"_perm{i_perm:04d}.pkl")
+                    if args.debug and os.path.exists(perm_state_file):
+                        with open(perm_state_file, "rb") as f:
+                            state = pickle.load(f)
+                            data_vec_container = state["data_vec_container"]
+                        LOGGER.warning(f"Debug mode, reading the permutation state from {perm_state_file}")
+                    elif args.debug:
                         state = {"data_vec_container": data_vec_container}
-                        with open(state_file, "wb") as f:
-                            LOGGER.warning(f"Debug mode, writing the state to {state_file}")
+                        with open(perm_state_file, "wb") as f:
+                            LOGGER.warning(f"Debug mode, writing the permutation state to {perm_state_file}")
                             pickle.dump(state, f)
 
-                # (n_examples_per_cosmo, n_pix, n_z_bins)
-                kg_examples = data_vec_container["kg"] if store_lensing else [None] * n_examples_per_cosmo
-                ia_examples = data_vec_container["ia"] if store_lensing else [None] * n_examples_per_cosmo
-                ds_examples = (
-                    data_vec_container["ds"] if store_lensing and extended_nla else [None] * n_examples_per_cosmo
-                )
+                    n_signals_per_perm = n_patches
+                    i_signal_start = i_perm * n_signals_per_perm
 
-                dg_examples = data_vec_container["dg"] if store_clustering else [None] * n_examples_per_cosmo
-                # qdg_examples = data_vec_container["dg2"] if quadratic_biasing else [None] * n_examples_per_cosmo
-                # NOTE this is the naive quadratic bias map from DeepLSS
-                qdg_examples = (
-                    np.square(dg_examples) * np.sign(dg_examples)
-                    if store_clustering and quadratic_biasing
-                    else [None] * n_examples_per_cosmo
-                )
+                    # (n_patches, n_pix, n_z_bins)
+                    kg_examples = data_vec_container["kg"] if store_lensing else [None] * n_signals_per_perm
+                    ia_examples = data_vec_container["ia"] if store_lensing else [None] * n_signals_per_perm
+                    ds_examples = (
+                        data_vec_container["ds"] if store_lensing and extended_nla else [None] * n_signals_per_perm
+                    )
 
-                # (n_examples_per_cosmo, n_noise_per_signaln_pix, n_z_bins)
-                sn_examples = data_vec_container["sn"] if store_lensing else [None] * n_examples_per_cosmo
+                    dg_examples = data_vec_container["dg"] if store_clustering else [None] * n_signals_per_perm
+                    # qdg_examples = data_vec_container["dg2"] if quadratic_biasing else [None] * n_signals_per_perm
+                    # NOTE this is the naive quadratic bias map from DeepLSS
+                    qdg_examples = (
+                        np.square(dg_examples) * np.sign(dg_examples)
+                        if store_clustering and quadratic_biasing
+                        else [None] * n_signals_per_perm
+                    )
 
-                # loop over the n_examples_per_cosmo
-                for i_signal, (kg, ia, ds, sn_samples, dg, qdg) in LOGGER.progressbar(
-                    enumerate(zip(kg_examples, ia_examples, ds_examples, sn_examples, dg_examples, qdg_examples)),
-                    at_level="info",
-                    desc="Looping through the per cosmology examples",
-                    total=n_examples_per_cosmo // n_noise_per_signal,
-                ):
-                    if args.debug and i_signal > n_patches:
-                        LOGGER.warning(f"Debug mode, only processing the first {n_patches} examples")
-                        break
+                    # (n_patches, n_noise_per_signal, n_pix, n_z_bins)
+                    sn_examples = data_vec_container["sn"] if store_lensing else [None] * n_signals_per_perm
 
-                    astro_sample = astro_samples[i_signal]
-                    cosmo_sample = np.concatenate([cosmo, astro_sample])
+                    # loop over the current permutation's examples and write each one immediately
+                    for i_patch, (kg, ia, ds, sn_samples, dg, qdg) in LOGGER.progressbar(
+                        enumerate(zip(kg_examples, ia_examples, ds_examples, sn_examples, dg_examples, qdg_examples)),
+                        at_level="info",
+                        desc="Looping through the per permutation examples",
+                        total=n_signals_per_perm,
+                    ):
+                        i_signal = i_signal_start + i_patch
+                        if args.debug and i_signal > n_patches:
+                            LOGGER.warning(f"Debug mode, only processing the first {n_patches} examples")
+                            break
 
-                    # to keep the indexing identical
-                    if conf["analysis"]["modelling"]["WL"]["source_clustering"] == "prior":
-                        astro_sample = astro_sample[:-1]
+                        astro_sample = astro_samples[i_signal]
+                        cosmo_sample = np.concatenate([cosmo, astro_sample])
 
-                    # lensing
-                    if extended_nla:
-                        Aia, n_Aia, bta = astro_sample[:3]
-                    else:
-                        Aia, n_Aia = astro_sample[:2]
-                        bta = None
+                        # to keep the indexing identical
+                        if conf["analysis"]["modelling"]["WL"]["source_clustering"] == "prior":
+                            astro_sample = astro_sample[:-1]
 
-                    # clustering
-                    if power_law_biasing:
-                        if quadratic_biasing:
-                            bg, n_bg, qbg, n_qbg = astro_sample[-4:]
-                            tomo_qbg = redshift.get_tomo_amplitudes_according_to_config(conf, qbg, n_qbg, "gc")
+                        # lensing
+                        if extended_nla:
+                            Aia, n_Aia, bta = astro_sample[:3]
                         else:
-                            bg, n_bg = astro_sample[-2:]
-                            tomo_qbg = None
-                        tomo_bg = redshift.get_tomo_amplitudes_according_to_config(conf, bg, n_bg, "gc")
-                    elif per_bin_biasing:
-                        n_gc_bins = len(conf["analysis"]["modelling"]["GC"]["z_bins"])
-                        if quadratic_biasing:
-                            # bg1, bg2, bg3, bg4, qbg1, qbg2, qbg3, qbg4 = astro_sample[-8:]
-                            # tomo_qbg = np.array([qbg1, qbg2, qbg3, qbg4])
-                            tomo_qbg = np.array(astro_sample[-n_gc_bins:])
-                            tomo_bg = np.array(astro_sample[-2*n_gc_bins:-n_gc_bins])
+                            Aia, n_Aia = astro_sample[:2]
+                            bta = None
+
+                        # clustering
+                        if power_law_biasing:
+                            if quadratic_biasing:
+                                bg, n_bg, qbg, n_qbg = astro_sample[-4:]
+                                tomo_qbg = redshift.get_tomo_amplitudes_according_to_config(conf, qbg, n_qbg, "gc")
+                            else:
+                                bg, n_bg = astro_sample[-2:]
+                                tomo_qbg = None
+                            tomo_bg = redshift.get_tomo_amplitudes_according_to_config(conf, bg, n_bg, "gc")
+                        elif per_bin_biasing:
+                            n_gc_bins = len(conf["analysis"]["modelling"]["GC"]["z_bins"])
+                            if quadratic_biasing:
+                                # bg1, bg2, bg3, bg4, qbg1, qbg2, qbg3, qbg4 = astro_sample[-8:]
+                                # tomo_qbg = np.array([qbg1, qbg2, qbg3, qbg4])
+                                tomo_qbg = np.array(astro_sample[-n_gc_bins:])
+                                tomo_bg = np.array(astro_sample[-2 * n_gc_bins : -n_gc_bins])
+                            else:
+                                # bg1, bg2, bg3, bg4 = astro_sample[-n_gc_bins:]
+                                # tomo_bg = np.array([bg1, bg2, bg3, bg4])
+                                tomo_bg = np.array(astro_sample[-n_gc_bins:])
+                                tomo_qbg = None
+
                         else:
-                            # bg1, bg2, bg3, bg4 = astro_sample[-n_gc_bins:]
-                            # tomo_bg = np.array([bg1, bg2, bg3, bg4])    
-                            tomo_bg = np.array(astro_sample[-n_gc_bins:])
-                            tomo_qbg = None
+                            raise ValueError(f"Unsupported configuration of clustering bias")
 
-                    else:
-                        raise ValueError(f"Unsupported configuration of clustering bias")
+                        kg, sn_samples, alm_kg, alm_sn_samples = (
+                            lensing_transform(kg, ia, ds, sn_samples, Aia, n_Aia, bta, np_seed=i_sobol + i_signal)
+                            if store_lensing
+                            else (None, None, None, None)
+                        )
+                        dg, pn_samples, alm_dg, alm_pn_samples = (
+                            clustering_transform(dg, tomo_bg, qdg, tomo_qbg, np_seed=i_sobol + i_signal)
+                            if store_clustering
+                            else (None, None, None, None)
+                        )
 
-                    kg, sn_samples, alm_kg, alm_sn_samples = (
-                        lensing_transform(kg, ia, ds, sn_samples, Aia, n_Aia, bta, np_seed=i_sobol + i_signal)
-                        if store_lensing
-                        else (None, None, None, None)
+                        # cross-probe maps
+                        xg = None
+                        xn_samples = None
+                        if store_cross_maps and store_lensing and store_clustering:
+                            data_vec_pix = pixel_file[0]
+                            n_side = conf["analysis"]["n_side"]
+
+                            n_z_wl = alm_kg.shape[1]
+                            n_z_gc = alm_dg.shape[1]
+                            n_z_cross = n_z_wl * n_z_gc
+
+                            xg = np.zeros((kg.shape[0], n_z_cross), dtype=np.float32)
+                            xn_samples = np.zeros((n_noise_per_signal, kg.shape[0], n_z_cross), dtype=np.float32)
+                            ix = 0
+                            for i in LOGGER.progressbar(
+                                range(n_z_wl), desc="cross bins", total=n_z_wl, at_level="debug"
+                            ):
+                                for j in range(n_z_gc):
+                                    alm_cross = np.sqrt(alm_kg[:, i] * alm_dg[:, j])
+                                    map_cross = hp.alm2map(alm_cross, nside=n_side, pol=False)
+                                    xg[:, ix] = hp.reorder(map_cross, r2n=True)[data_vec_pix]
+
+                                    for k in range(n_noise_per_signal):
+                                        alm_cross_noise = np.sqrt(alm_sn_samples[k][:, i] * alm_pn_samples[k][:, j])
+                                        map_cross_noise = hp.alm2map(alm_cross_noise, nside=n_side, pol=False)
+                                        xn_samples[k, :, ix] = hp.reorder(map_cross_noise, r2n=True)[data_vec_pix]
+
+                                    ix += 1
+
+                        # power spectra
+                        cls = power_spectra.run_tfrecords_alm_to_cl(alm_kg, alm_sn_samples, alm_dg, alm_pn_samples)
+
+                        serialized = tfrecords.parse_forward_grid(
+                            kg, sn_samples, dg, pn_samples, cls, cosmo_sample, i_sobol, i_signal, xg, xn_samples
+                        ).SerializeToString()
+
+                        _verify_tfrecord(
+                            serialized,
+                            n_noise_per_signal,
+                            kg,
+                            sn_samples,
+                            dg,
+                            pn_samples,
+                            cosmo_sample,
+                            i_sobol,
+                            i_signal,
+                            cls,
+                            xg,
+                            xn_samples,
+                        )
+
+                        file_writer.write(serialized)
+
+                    del (
+                        data_vec_container,
+                        kg_examples,
+                        ia_examples,
+                        ds_examples,
+                        dg_examples,
+                        qdg_examples,
+                        sn_examples,
                     )
-                    dg, pn_samples, alm_dg, alm_pn_samples = (
-                        clustering_transform(dg, tomo_bg, qdg, tomo_qbg, np_seed=i_sobol + i_signal)
-                        if store_clustering
-                        else (None, None, None, None)
-                    )
-
-                    # cross-probe maps
-                    xg = None
-                    xn_samples = None
-                    if store_cross_maps and store_lensing and store_clustering:
-                        data_vec_pix = pixel_file[0]
-                        n_side = conf["analysis"]["n_side"]
-
-                        n_z_wl = alm_kg.shape[1]
-                        n_z_gc = alm_dg.shape[1]
-                        n_z_cross = n_z_wl * n_z_gc
-
-                        xg = np.zeros((kg.shape[0], n_z_cross), dtype=np.float32)
-                        xn_samples = np.zeros((n_noise_per_signal, kg.shape[0], n_z_cross), dtype=np.float32)
-                        ix = 0
-                        for i in LOGGER.progressbar(
-                            range(n_z_wl), desc="cross bins", total=n_z_wl, at_level="debug"
-                        ):
-                            for j in range(n_z_gc):
-                                alm_cross = np.sqrt(alm_kg[:, i] * alm_dg[:, j])
-                                map_cross = hp.alm2map(alm_cross, nside=n_side, pol=False)
-                                xg[:, ix] = hp.reorder(map_cross, r2n=True)[data_vec_pix]
-
-                                for k in range(n_noise_per_signal):
-                                    alm_cross_noise = np.sqrt(alm_sn_samples[k][:, i] * alm_pn_samples[k][:, j])
-                                    map_cross_noise = hp.alm2map(alm_cross_noise, nside=n_side, pol=False)
-                                    xn_samples[k, :, ix] = hp.reorder(map_cross_noise, r2n=True)[data_vec_pix]
-
-                                ix += 1
-
-                    # power spectra
-                    cls = power_spectra.run_tfrecords_alm_to_cl(alm_kg, alm_sn_samples, alm_dg, alm_pn_samples)
-
-                    serialized = tfrecords.parse_forward_grid(
-                        kg, sn_samples, dg, pn_samples, cls, cosmo_sample, i_sobol, i_signal, xg, xn_samples
-                    ).SerializeToString()
-
-                    _verify_tfrecord(
-                        serialized,
-                        n_noise_per_signal,
-                        kg,
-                        sn_samples,
-                        dg,
-                        pn_samples,
-                        cosmo_sample,
-                        i_sobol,
-                        i_signal,
-                        cls,
-                        xg,
-                        xn_samples,
-                    )
-
-                    file_writer.write(serialized)
-
 
         LOGGER.info(f"Done with index {index} after {LOGGER.timer.elapsed('index')}")
-        
 
 
 def _data_vector_smoothing(dv, l_min, l_max, theta_fwhm, np_seed, conf, pixel_file, mask):
@@ -612,7 +620,6 @@ def _get_clustering_transform(conf, pixel_file):
     return clustering_transform
 
 
-
 def _verify_tfrecord(
     serialized,
     n_noise_per_signal,
@@ -749,6 +756,7 @@ def merge(indices, args):
             f["i_noise"][i] = i_noise
 
     LOGGER.info(f"Done with merging of the grid power spectra")
+
 
 if __name__ == "__main__":
 
