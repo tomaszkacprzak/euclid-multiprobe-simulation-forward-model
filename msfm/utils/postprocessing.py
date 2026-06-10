@@ -64,7 +64,7 @@ def postprocess_fiducial_permutations(args, conf, cosmo_dir_in, i_perm, pixel_fi
                 full_sky_bin = _read_full_sky_bin(conf, full_maps_file, in_map_type, z_bin)
 
                 if sample == "WL":
-                    data_vecs = postprocess_metacal_bin(
+                    data_vecs = postprocess_wl_bin(
                         conf,
                         full_sky_bin,
                         in_map_type,
@@ -77,7 +77,7 @@ def postprocess_fiducial_permutations(args, conf, cosmo_dir_in, i_perm, pixel_fi
                         bgs_key="fiducial",
                     )
                 elif sample == "GC":
-                    data_vecs = postprocess_maglim_bin(
+                    data_vecs = postprocess_gc_bin(
                         conf, full_sky_bin, in_map_type, out_map_type, i_z, "fiducial", pixel_file, rng=rng
                     )
 
@@ -493,7 +493,7 @@ def postprocess_clustering(
     base_patch_pix = patches_pix[0]
 
     # DeepLSS-style stochasticity has to be applied to the full-sky maps
-    if conf["analysis"]["modelling"]["clustering"]["stochasticity"] and (i_sobol is not None) and (rng is not None):
+    if conf["analysis"]["modelling"]["GC"]["stochasticity"] and (i_sobol is not None) and (rng is not None):
         delta_full_sky = clustering.extend_sobol_sequence_by_stochasticity(conf, delta_full_sky, simset, i_sobol, rng)
 
     delta_dvs = np.zeros((n_patches, data_vec_len), dtype=np.float32)

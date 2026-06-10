@@ -12,6 +12,8 @@ import numpy as np
 from scipy.spatial import Delaunay, ConvexHull
 from scipy.optimize import fsolve
 from scipy.stats import norm
+from scipy.stats import qmc
+from sobol_seq import i4_sobol
 
 from msfm.utils import files, parameters, logger, parameters
 
@@ -278,3 +280,54 @@ def assess_prior_boundary(
         LOGGER.info(f"  {key:<24}  {stats['frac_near']:>10.3f}  {stats['p5']:>8.3f}  {stats['median']:>8.3f}{flag}")
 
     return results
+
+def sample_astro_parameters(astro_params, i_cosmo, n_examples_per_cosmo, n_noise_per_signal, astro_priors):
+
+    latin_sampler = qmc.LatinHypercube(d=len(astro_params), seed=i_cosmo)
+    unscaled_samples = latin_sampler.random(n_examples_per_cosmo // n_noise_per_signal)
+    astro_samples = qmc.scale(unscaled_samples, l_bounds=astro_priors[:, 0], u_bounds=astro_priors[:, 1])
+    return astro_samples.astype(np.float32)
+
+def extend_sobol_sequence(conf, cosmo_params_info, i_cosmo):
+    """Extend the Sobol sequence by the stochasticity parameter if needed and verify that the Sobol sequences are
+    identical (computed here vs. stored in the CosmoGrid)"""
+
+    baryonified = conf["analysis"]["modelling"]["baryonified"]
+    stochasticity = conf["analysis"]["modelling"]["GC"]["stochasticity"]
+
+    cosmo_params = conf["analysis"]["params"]["cosmo"].copy()
+    if baryonified:
+        cosmo_params += conf["analysis"]["params"]["bary"]
+    cosmo = [cosmo_params_info[cosmo_param][i_cosmo] for cosmo_param in cosmo_params]
+    cosmo = np.array(cosmo, dtype=np.float32)
+
+    sobol_params = cosmo_params.copy()
+    if stochasticity:
+        sobol_params += conf["analysis"]["params"]["bg"]["stochasticity"]
+
+    sobol_priors = parameters.get_prior_intervals(sobol_params, conf=conf)
+    # extend the Sobol sequence by astrophysical parameters
+    i_sobol = cosmo_params_info["sobol_index"][i_cosmo]
+    sobol_point, _ = i4_sobol(sobol_priors.shape[0], i_sobol)
+    sobol_point = sobol_point * np.squeeze(np.diff(sobol_priors)) + sobol_priors[:, 0]
+    sobol_point = sobol_point.astype(np.float32)
+
+    if stochasticity:
+        # like in msfm.utils.clustering.extend_sobol_sequence_by_stochasticity
+        rg = sobol_point[-1]
+        cosmo = np.concatenate((cosmo, np.array([rg])))
+
+    # verify that the Sobol sequences (stored and newly generated) are identical for the cosmo params
+    assert np.allclose(sobol_point[0], cosmo[0], rtol=1e-3, atol=1e-5)  # Om
+    assert np.allclose(sobol_point[1], cosmo[1], rtol=1e-3, atol=1e-5)  # s8
+    assert np.allclose(sobol_point[2], cosmo[2], rtol=1e-3, atol=1e-3)  # Ob
+    assert np.allclose(sobol_point[3], cosmo[3], rtol=1e-3, atol=1e-5)  # H0
+    assert np.allclose(sobol_point[4], cosmo[4], rtol=1e-3, atol=1e-5)  # ns
+    assert np.allclose(sobol_point[5], cosmo[5], rtol=1e-3, atol=1e-5)  # w0
+    if baryonified:
+        assert np.allclose(sobol_point[6], np.log10(cosmo[6]), rtol=1e-3, atol=1e-5)  # bary_Mc
+        assert np.allclose(sobol_point[7], cosmo[7], rtol=1e-3, atol=1e-5)  # bary_nu
+    LOGGER.debug("The parameters derived from the sobol sequence are identical to the stored ones")
+
+    return i_sobol, cosmo
+
