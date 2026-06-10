@@ -191,7 +191,6 @@ def cls_to_smoothed_cls(
 
     return cls
 
-
 def alm_to_smoothed_map(
     alm: np.ndarray,
     n_side: int,
@@ -235,7 +234,6 @@ def alm_to_smoothed_map(
         full_map = hp.reorder(full_map, r2n=True)
 
     return full_map, alm
-
 
 def map_to_smoothed_map(
     full_map: np.ndarray,
@@ -337,7 +335,6 @@ def map_to_smoothed_map(
         raise ValueError(f"Unknown full_map.ndim: {full_map.ndim}, must be 1 or 2")
 
     return full_map, alm
-
 
 def data_vector_to_smoothed_data_vector(
     data_vector: np.ndarray,

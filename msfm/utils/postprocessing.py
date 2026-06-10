@@ -22,7 +22,6 @@ LOGGER = logger.get_logger(__file__)
 
 # fiducial ############################################################################################################
 
-
 def postprocess_fiducial_permutations(args, conf, cosmo_dir_in, i_perm, pixel_file, noise_file):
     LOGGER.info(f"Starting simulation permutation {i_perm:04d}")
     LOGGER.timer.start("permutation")
@@ -148,7 +147,6 @@ def iter_postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noi
             args, conf, cosmo_dir_in, i_perm, pixel_file, noise_file, bsc_samples=bsc_samples, rng=rng
         )
 
-
 def postprocess_grid_permutation(args, conf, cosmo_dir_in, i_perm, pixel_file, noise_file, bsc_samples=None, rng=None):
     # hard-coded with respect to the filenames
     i_sobol = int(cosmo_dir_in[-7:-1])
@@ -224,7 +222,6 @@ def postprocess_grid_permutation(args, conf, cosmo_dir_in, i_perm, pixel_file, n
     LOGGER.info(f"Done with permutation {i_perm:04d} after {LOGGER.timer.elapsed('permutation')}")
 
     return data_vec_container
-
 
 def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_file, bsc_samples=None):
     # output container, one for each cosmology
@@ -305,7 +302,6 @@ def _set_up_per_cosmo_dv_container(conf, pixel_file):
 
 # lensing #############################################################################################################
 
-
 def postprocess_wl_bin(
     conf,
     full_sky_map,
@@ -339,7 +335,6 @@ def postprocess_wl_bin(
         raise ValueError(f"Unknown input map type {in_map_type} for weak lensing")
 
     return kappa_dvs
-
 
 def postprocess_lensing(kappa_full_sky, conf, pixel_file, i_z):
     n_side = conf["analysis"]["n_side"]
@@ -410,7 +405,6 @@ def postprocess_lensing(kappa_full_sky, conf, pixel_file, i_z):
 
     # shape (n_patches, data_vec_len)
     return kappa_dvs
-
 
 def postprocess_shape_noise(
     delta_full_sky, conf, simset, pixel_file, noise_file, i_z, bgs_key, i_perm=None, bsc_samples=None
@@ -528,7 +522,6 @@ def postprocess_shape_noise(
 
 # clustering ##########################################################################################################
 
-
 def postprocess_gc_bin(conf, full_sky_map, in_map_type, out_map_type, i_z, simset, pixel_file, i_sobol=None, rng=None):
     if in_map_type in ["dg", "dg2"]:
         delta_dvs = postprocess_clustering(full_sky_map, conf, i_z, simset, pixel_file, "GC", i_sobol, rng)
@@ -536,7 +529,6 @@ def postprocess_gc_bin(conf, full_sky_map, in_map_type, out_map_type, i_z, simse
         raise ValueError(f"Unknown input map type {in_map_type} for galaxy clustering")
 
     return delta_dvs
-
 
 def postprocess_clustering(
     delta_full_sky, conf, i_z, simset, pixel_file, galaxy_sample="maglim", i_sobol=None, rng=None
@@ -574,7 +566,6 @@ def postprocess_clustering(
 
 # shared utils ########################################################################################################
 
-
 def _get_full_sky_perm(args, conf, cosmo_dir_in, i_perm):
     with_bary = conf["analysis"]["modelling"]["baryonified"]
 
@@ -583,7 +574,6 @@ def _get_full_sky_perm(args, conf, cosmo_dir_in, i_perm):
     full_maps_file = filenames.get_filename_full_maps(perm_dir_in, with_bary=with_bary, version=args.cosmogrid_version)
 
     return full_maps_file
-
 
 def _read_full_sky_bin(conf, full_maps_file, in_map_type, z_bin):
     n_side = conf["analysis"]["n_side"]

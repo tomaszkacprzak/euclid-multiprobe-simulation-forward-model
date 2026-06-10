@@ -132,7 +132,6 @@ def setup(args):
 
     return args
 
-
 def main(indices, args):
 
     LOGGER.timer.start("main")
@@ -341,7 +340,7 @@ def main(indices, args):
                                 tomo_qbg = None
                             tomo_bg = redshift.get_tomo_amplitudes_according_to_config(conf, bg, n_bg, "gc")
                         elif per_bin_biasing:
-                            n_gc_bins = len(conf["analysis"]["modelling"]["GC"]["z_bins"])
+                            n_gc_bins = len(conf["survey"]["GC"]["z_bins"])
                             if quadratic_biasing:
                                 # bg1, bg2, bg3, bg4, qbg1, qbg2, qbg3, qbg4 = astro_sample[-8:]
                                 # tomo_qbg = np.array([qbg1, qbg2, qbg3, qbg4])
@@ -431,7 +430,6 @@ def main(indices, args):
                     )
 
         LOGGER.info(f"Done with index {index} after {LOGGER.timer.elapsed('index')}")
-
 
 def _data_vector_smoothing(dv, l_min, l_max, theta_fwhm, np_seed, conf, pixel_file, mask):
     # Gaussian Random Field
