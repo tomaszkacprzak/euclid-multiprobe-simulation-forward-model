@@ -333,7 +333,9 @@ def main(indices, args):
                     at_level="info",
                     desc="Looping through the per cosmology signal maps",
                     total=n_perms_per_cosmo,
-                ):
+                ):  
+                    
+                    LOGGER.info(f"Starting permutation {i_perm:04d}/{n_perms_per_cosmo} for cosmology {i_cosmo}/{n_cosmos_per_file} for file {tfr_file}")
 
                     # if args.debug and i_signal > n_patches:
                     #     LOGGER.warning(f"Debug mode, only processing the first {n_patches} examples")

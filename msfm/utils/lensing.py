@@ -58,7 +58,7 @@ def get_m_bias_distribution(conf=None):
     from scipy.stats import multivariate_normal
     m_bias_dist = multivariate_normal(
         mean=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["mu"],
-        cov=np.diag(conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"]),
+        cov=np.diag(conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"]**2),
     )
 
     m_bias_dist.sample = m_bias_dist.rvs # for compatibility with tensorflow_probability
