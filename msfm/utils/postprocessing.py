@@ -441,7 +441,7 @@ def postprocess_shape_noise(
     w = gamma_cat[:, 2]
 
     if sc_mode in ["fixed", "prior"]:
-        cat_dist = tfp.distributions.Empirical(samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1)
+        # cat_dist = tfp.distributions.Empirical(samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1)
 
         # normalize to number density contrast
         # delta_full_sky_norm = (delta_full_sky - np.mean(delta_full_sky)) / np.mean(delta_full_sky)
@@ -471,11 +471,13 @@ def postprocess_shape_noise(
                 counts = counts_full[patch_pix]
 
             # vectorized sampling, shape (len(counts), n_noise_per_signal)
-            gamma1, gamma2 = lensing.noise_gen(counts, cat_dist, n_noise_per_signal)
+            gamma1, gamma2 = lensing.noise_gen_numba(counts, gamma_abs, w, n_noise_per_signal)
         else:
-            gamma1, gamma2 = lensing.noise_gen_in_place(
+
+            gamma1, gamma2 = lensing.noise_gen_in_place_numba(
                 gamma_abs, w, pix_cat, base_patch_pix, n_pix, n_noise_per_signal
             )
+
 
         # not vectorized because of the healpy alm transform
         gamma1_patch = np.zeros(n_pix, dtype=np.float32)

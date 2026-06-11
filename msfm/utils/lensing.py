@@ -8,6 +8,8 @@ Tools to handle the scale cuts, kaiser-squires transformation and multiplicative
 import numpy as np
 
 from msfm.utils import files, logger, scales, imports
+from numba import njit, prange
+
 
 hp = imports.import_healpy()
 
@@ -231,3 +233,240 @@ def noise_gen_in_place(gamma_abs, w, pix, base_patch_pix, n_pix, n_noise_per_sig
         gamma2_patch = tf.gather(gamma2_per_pix, base_patch_pix)
 
     return gamma1_patch.numpy(), gamma2_patch.numpy()
+
+
+def noise_gen_numba(counts, gamma_abs, weights, n_noise_per_signal):
+    """
+    Python wrapper: normalizes input types before calling the JIT function.
+    """
+
+    counts = np.ascontiguousarray(counts, dtype=np.int64)
+    gamma_abs = np.ascontiguousarray(gamma_abs, dtype=np.float32)
+    weights = np.ascontiguousarray(weights, dtype=np.float32)
+
+    # return noise_gen_numba_impl(counts, gamma_abs, weights, int(n_noise_per_signal))
+    return noise_gen_numba_parallel(counts, gamma_abs, weights, int(n_noise_per_signal))
+
+@njit(cache=True)
+def noise_gen_numba_impl(counts, gamma_abs, weights, n_noise_per_signal):
+    """
+    JIT-compiled implementation.
+
+    Samples the empirical catalog WITH replacement.
+    """
+    n_pix = len(counts)
+    n_cat = len(gamma_abs)
+
+    gamma1_out = np.zeros((n_pix, n_noise_per_signal), dtype=np.float32)
+    gamma2_out = np.zeros((n_pix, n_noise_per_signal), dtype=np.float32)
+
+    w_sum = np.empty(n_noise_per_signal, dtype=np.float32)
+
+    two_pi = np.float32(2.0 * np.pi)
+
+    for pix in range(n_pix):
+        n_gals = counts[pix]
+
+        if n_gals <= 0:
+            continue
+
+        for j in range(n_noise_per_signal):
+            gamma1_out[pix, j] = 0.0
+            gamma2_out[pix, j] = 0.0
+            w_sum[j] = 0.0
+
+        for _ in range(n_gals):
+            for j in range(n_noise_per_signal):
+                # Empirical sampling with replacement
+                cat_idx = np.random.randint(0, n_cat)
+
+                gamma = gamma_abs[cat_idx]
+                w = weights[cat_idx]
+
+                phase = two_pi * np.float32(np.random.random())
+
+                gamma1_out[pix, j] += np.cos(phase) * gamma * w
+                gamma2_out[pix, j] += np.sin(phase) * gamma * w
+                w_sum[j] += w
+
+        for j in range(n_noise_per_signal):
+            if w_sum[j] != 0.0:
+                gamma1_out[pix, j] /= w_sum[j]
+                gamma2_out[pix, j] /= w_sum[j]
+            else:
+                gamma1_out[pix, j] = 0.0
+                gamma2_out[pix, j] = 0.0
+
+    return gamma1_out, gamma2_out
+
+
+@njit(parallel=True, cache=True)
+def noise_gen_numba_parallel(counts, gamma_abs, weights, n_noise_per_signal):
+    """
+    Parallel NumPy/Numba version.
+
+    Parallelization is over pixels. Each thread handles independent pixels,
+    so there are no shared-output race conditions.
+
+    Sampling from the empirical catalog is WITH replacement.
+    """
+    n_pix = counts.shape[0]
+    n_cat = gamma_abs.shape[0]
+
+    g1_out = np.zeros((n_pix, n_noise_per_signal), dtype=np.float32)
+    g2_out = np.zeros((n_pix, n_noise_per_signal), dtype=np.float32)
+
+    two_pi = 2.0 * np.pi
+
+    for pix in prange(n_pix):
+        n_gals = counts[pix]
+
+        if n_gals == 0:
+            continue
+
+        # Thread-local because it is allocated inside the prange loop.
+        w_sum = np.zeros(n_noise_per_signal, dtype=np.float64)
+
+        for _ in range(n_gals):
+            for j in range(n_noise_per_signal):
+                idx = np.random.randint(0, n_cat)
+
+                gamma = gamma_abs[idx]
+                w = weights[idx]
+
+                phase = two_pi * np.random.random()
+
+                g1_out[pix, j] += np.float32(np.cos(phase) * gamma * w)
+                g2_out[pix, j] += np.float32(np.sin(phase) * gamma * w)
+                w_sum[j] += w
+
+        for j in range(n_noise_per_signal):
+            if w_sum[j] != 0.0:
+                inv_w = 1.0 / w_sum[j]
+                g1_out[pix, j] = np.float32(g1_out[pix, j] * inv_w)
+                g2_out[pix, j] = np.float32(g2_out[pix, j] * inv_w)
+            else:
+                g1_out[pix, j] = 0.0
+                g2_out[pix, j] = 0.0
+
+    return g1_out, g2_out
+
+
+import numpy as np
+from numba import njit, prange
+
+
+@njit(cache=True)
+def _build_patch_lookup(base_patch_pix, n_pix):
+    """
+    Build a lookup table from full-sky pixel id -> patch row index.
+
+    Pixels not in the patch get -1.
+    """
+    patch_lookup = np.full(n_pix, -1, dtype=np.int64)
+
+    for i in range(base_patch_pix.shape[0]):
+        patch_lookup[base_patch_pix[i]] = i
+
+    return patch_lookup
+
+@njit(parallel=True, cache=True)
+def noise_gen_in_place_numba_parallel_core(
+    gamma_abs,
+    weights,
+    pix,
+    patch_lookup,
+    n_noise_per_signal,
+):
+    """
+    Numba core for in-place-style noise generation.
+
+    This computes only the requested patch pixels, not the full n_pix map.
+
+    Args:
+        gamma_abs: float array, shape (n_gals,)
+        weights: float array, shape (n_gals,)
+        pix: int array, shape (n_gals,)
+            Full-sky pixel index for each catalog galaxy.
+        patch_lookup: int array, shape (n_pix,)
+            Maps full-sky pixel id to patch row index, or -1 if outside patch.
+        n_noise_per_signal: int
+
+    Returns:
+        gamma1_patch, gamma2_patch:
+            float32 arrays, shape (len(base_patch_pix), n_noise_per_signal)
+    """
+    n_gals = gamma_abs.shape[0]
+    n_patch = 0
+
+    # Infer patch length from lookup.
+    # This assumes patch_lookup contains exactly 0, ..., n_patch - 1.
+    for i in range(patch_lookup.shape[0]):
+        if patch_lookup[i] + 1 > n_patch:
+            n_patch = patch_lookup[i] + 1
+
+    gamma1_patch = np.zeros((n_patch, n_noise_per_signal), dtype=np.float32)
+    gamma2_patch = np.zeros((n_patch, n_noise_per_signal), dtype=np.float32)
+
+    two_pi = 2.0 * np.pi
+
+    # Parallelize over noise realization columns.
+    # Each thread owns one column j, so no two threads write the same output cell.
+    for j in prange(n_noise_per_signal):
+        # Temporary weight sum for this one noise realization.
+        # Shape is only (n_patch,), not (n_pix,) or (n_gals, n_noise).
+        sum_w = np.zeros(n_patch, dtype=np.float64)
+
+        for gal in range(n_gals):
+            patch_idx = patch_lookup[pix[gal]]
+
+            # Skip galaxies outside the requested patch.
+            if patch_idx < 0:
+                continue
+
+            gamma = gamma_abs[gal]
+            w = weights[gal]
+
+            phase = two_pi * np.random.random()
+
+            gamma1_patch[patch_idx, j] += np.float32(np.cos(phase) * gamma * w)
+            gamma2_patch[patch_idx, j] += np.float32(np.sin(phase) * gamma * w)
+            sum_w[patch_idx] += w
+
+        for p in range(n_patch):
+            if sum_w[p] != 0.0:
+                inv_w = 1.0 / sum_w[p]
+                gamma1_patch[p, j] = np.float32(gamma1_patch[p, j] * inv_w)
+                gamma2_patch[p, j] = np.float32(gamma2_patch[p, j] * inv_w)
+            else:
+                gamma1_patch[p, j] = 0.0
+                gamma2_patch[p, j] = 0.0
+
+    return gamma1_patch, gamma2_patch
+
+
+def noise_gen_in_place_numba(
+    gamma_abs,
+    w,
+    pix,
+    base_patch_pix,
+    n_pix,
+    n_noise_per_signal,
+):
+
+    LOGGER.warning("noise_gen_in_place_numba_parallel: This code is not tested yet")
+
+    gamma_abs = np.asarray(gamma_abs, dtype=np.float64)
+    w = np.asarray(w, dtype=np.float64)
+    pix = np.asarray(pix, dtype=np.int64)
+    base_patch_pix = np.asarray(base_patch_pix, dtype=np.int64)
+
+    patch_lookup = _build_patch_lookup(base_patch_pix, n_pix)
+
+    return noise_gen_in_place_numba_parallel_core(
+        gamma_abs,
+        w,
+        pix,
+        patch_lookup,
+        n_noise_per_signal,
+    )
