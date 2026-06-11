@@ -122,3 +122,46 @@ def set_all_loggers_level(level):
             set_logger_level(logger=loggerDict[key], level=level)
         except Exception as err:
             pass
+
+
+import os
+import gc
+import time
+import psutil
+import threading
+from contextlib import contextmanager
+
+@contextmanager
+def peak_memory(label="block", interval=0.01):
+    process = psutil.Process(os.getpid())
+
+    gc.collect()
+    start = process.memory_info().rss
+    peak = start
+    running = True
+
+    def monitor():
+        nonlocal peak
+        while running:
+            rss = process.memory_info().rss
+            peak = max(peak, rss)
+            time.sleep(interval)
+
+    thread = threading.Thread(target=monitor, daemon=True)
+    thread.start()
+
+    try:
+        yield
+    finally:
+        running = False
+        thread.join()
+
+        gc.collect()
+        end = process.memory_info().rss
+
+        print(f"{label}:")
+        print(f"  start:      {start / 1024**2:.2f} MiB")
+        print(f"  end:        {end / 1024**2:.2f} MiB")
+        print(f"  peak:       {peak / 1024**2:.2f} MiB")
+        print(f"  peak delta: {(peak - start) / 1024**2:.2f} MiB")
+        print(f"  end delta:  {(end - start) / 1024**2:+.2f} MiB")
