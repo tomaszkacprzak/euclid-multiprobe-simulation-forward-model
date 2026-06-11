@@ -48,12 +48,13 @@ def survey_angles_to_pix(conf, ra, dec, n_side):
     return pix
 
 
-def build_metacal_map_from_cat(conf, debug=True, force_recompute=False):
+def build_metacal_map_from_cat(conf, debug=True, force_recompute=False, sign_e1=1, sign_e2=-1):
     conf = files.load_config(conf)
 
     file_dir = os.path.dirname(__file__)
     repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
-    gamma_cache_dir = f"{repo_dir}/data/metacal_wl_gamma_map.npy"
+    sign_suffix = f"_e1{'m' if sign_e1 < 0 else 'p'}_e2{'m' if sign_e2 < 0 else 'p'}"
+    gamma_cache_dir = f"{repo_dir}/data/metacal_wl_gamma_map{sign_suffix}.npy"
     count_cache_dir = f"{repo_dir}/data/metacal_wl_count_map.npy"
 
     # load from cache if available and not forcing recompute
@@ -99,8 +100,8 @@ def build_metacal_map_from_cat(conf, debug=True, force_recompute=False):
         w = metacal["/catalog/unsheared/weight"][:][metacal_bin]
 
         # following eq. (10) in https://arxiv.org/pdf/2403.02314
-        gamma1_map = np.bincount(pix, weights=e1 * w, minlength=n_pix)
-        gamma2_map = np.bincount(pix, weights=e2 * w, minlength=n_pix)
+        gamma1_map = np.bincount(pix, weights=sign_e1 * e1 * w, minlength=n_pix)
+        gamma2_map = np.bincount(pix, weights=sign_e2 * e2 * w, minlength=n_pix)
         w_map = np.bincount(pix, weights=w, minlength=n_pix)
 
         mask = w_map > 0
@@ -162,6 +163,83 @@ def build_metacal_map_from_cat(conf, debug=True, force_recompute=False):
     LOGGER.info(f"Saved metacal maps to {gamma_cache_dir} and {count_cache_dir}")
 
     return wl_gamma_map, wl_count_map
+
+
+def build_full_metacal_map_from_cat(conf, debug=True, force_recompute=False, sign_e1=1, sign_e2=1):
+    """Build a full (non-tomographic) metacal shear map by combining all tomographic bins."""
+    conf = files.load_config(conf)
+
+    file_dir = os.path.dirname(__file__)
+    repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
+    sign_suffix = (
+        "" if (sign_e1 == 1 and sign_e2 == 1) else f"_e1{'m' if sign_e1 < 0 else 'p'}_e2{'m' if sign_e2 < 0 else 'p'}"
+    )
+    gamma_cache_dir = f"{repo_dir}/data/metacal_wl_gamma_map_full{sign_suffix}.npy"
+    count_cache_dir = f"{repo_dir}/data/metacal_wl_count_map_full.npy"
+
+    if not force_recompute:
+        try:
+            wl_gamma_map = np.load(gamma_cache_dir)
+            wl_count_map = np.load(count_cache_dir)
+            LOGGER.info("Loaded full metacal maps from cache")
+            return wl_gamma_map, wl_count_map
+        except FileNotFoundError:
+            LOGGER.info("Cache not found, computing full metacal map")
+
+    n_side = conf["analysis"]["n_side"]
+    n_pix = hp.nside2npix(n_side)
+
+    n_z = len(conf["survey"]["metacal"]["z_bins"])
+    R_gamma = conf["survey"]["metacal"]["R_gamma"]
+    R_s = conf["survey"]["metacal"]["R_s"]
+
+    cat_dir = conf["dirs"]["catalog"]
+
+    index = h5py.File(f"{cat_dir}/DESY3_indexcat.h5", "r")
+    gold = h5py.File(f"{cat_dir}/DESY3_GOLD_2_2.1.h5", "r")
+    metacal = h5py.File(f"{cat_dir}/DESY3_metacal_v03-004.h5", "r")
+
+    gamma1_map = np.zeros(n_pix)
+    gamma2_map = np.zeros(n_pix)
+    w_map = np.zeros(n_pix)
+    count_map = np.zeros(n_pix, dtype=np.int32)
+
+    for i in range(n_z):
+        metacal_bin = index[f"/index/select_bin{i+1}"][:]
+
+        dec = gold["/catalog/gold/dec"][:][metacal_bin]
+        ra = gold["/catalog/gold/ra"][:][metacal_bin]
+        pix = survey_angles_to_pix(conf, ra, dec, n_side)
+
+        e1 = metacal["/catalog/unsheared/e_1"][:][metacal_bin]
+        e2 = metacal["/catalog/unsheared/e_2"][:][metacal_bin]
+        w = metacal["/catalog/unsheared/weight"][:][metacal_bin]
+
+        # Apply per-bin shear response correction before accumulating across bins
+        R_tot = R_gamma[i] + R_s[i]
+        gamma1_map += np.bincount(pix, weights=sign_e1 * e1 * w / R_tot, minlength=n_pix)
+        gamma2_map += np.bincount(pix, weights=sign_e2 * e2 * w / R_tot, minlength=n_pix)
+        w_map += np.bincount(pix, weights=w, minlength=n_pix)
+        count_map += np.bincount(pix, minlength=n_pix).astype(np.int32)
+
+        if debug:
+            LOGGER.info(f"Accumulated metacalibration bin {i+1}: N_gal = {len(metacal_bin)}")
+
+    index.close()
+    gold.close()
+    metacal.close()
+
+    mask = w_map > 0
+    gamma1_map[mask] /= w_map[mask]
+    gamma2_map[mask] /= w_map[mask]
+
+    wl_gamma_map = np.stack([gamma1_map, gamma2_map], axis=-1)  # (n_pix, 2)
+
+    np.save(gamma_cache_dir, wl_gamma_map)
+    np.save(count_cache_dir, count_map)
+    LOGGER.info(f"Saved full metacal maps to {gamma_cache_dir} and {count_cache_dir}")
+
+    return wl_gamma_map, count_map
 
 
 def build_maglim_map_from_cat(conf, debug=True, force_recompute=False):
