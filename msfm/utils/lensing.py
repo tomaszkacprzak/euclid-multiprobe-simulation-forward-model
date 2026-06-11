@@ -49,12 +49,19 @@ def get_m_bias_distribution(conf=None):
     """
     conf = files.load_config(conf)
 
-    import tensorflow_probability as tfp
+    # import tensorflow_probability as tfp
 
-    m_bias_dist = tfp.distributions.MultivariateNormalDiag(
-        loc=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["mu"],
-        scale_diag=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"],
+    # m_bias_dist = tfp.distributions.MultivariateNormalDiag(
+    #     loc=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["mu"],
+    #     scale_diag=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"],
+    # )
+    from scipy.stats import multivariate_normal
+    m_bias_dist = multivariate_normal(
+        mean=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["mu"],
+        cov=np.diag(conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"]),
     )
+
+    m_bias_dist.sample = m_bias_dist.rvs # for compatibility with tensorflow_probability
 
     return m_bias_dist
 
