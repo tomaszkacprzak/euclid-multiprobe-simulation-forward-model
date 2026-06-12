@@ -319,7 +319,7 @@ def main(indices, args):
                 i_sobol = int(cosmo_dir_in[-7:-1])
                 n_patches = conf["analysis"]["n_patches"]
                 n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
-                rng = np.random.default_rng()
+                # rng = np.random.default_rng()
 
                 store_lensing = conf["analysis"]["modelling"]["WL"]["store"]
                 store_clustering = conf["analysis"]["modelling"]["GC"]["store"]
@@ -334,9 +334,11 @@ def main(indices, args):
                     desc="Looping through the per cosmology signal maps",
                     total=n_perms_per_cosmo,
                 ):  
-                    
+                                        
                     LOGGER.info(f"Starting permutation {i_perm:04d}/{n_perms_per_cosmo} for cosmology {i_cosmo}/{n_cosmos_per_file} for file {tfr_file}")
                     LOGGER.timer.start("permutation")
+
+                    rng_perm = np.random.default_rng(int(conf['master_seed']) + i_cosmo * n_perms_per_cosmo + i_perm)
 
                     # if args.debug and i_signal > n_patches:
                     #     LOGGER.warning(f"Debug mode, only processing the first {n_patches} examples")
@@ -375,6 +377,7 @@ def main(indices, args):
                                         bgs_key=f"cosmo_{i_sobol:06d}",
                                         i_perm=i_perm,
                                         bsc_samples=bsc_samples,
+                                        rng=rng_perm
                                     )
                                 elif sample == "GC":
                                     data_vecs = postprocessing.postprocess_gc_bin(
@@ -386,7 +389,7 @@ def main(indices, args):
                                         "grid",
                                         pixel_file,
                                         i_sobol=i_sobol,
-                                        rng=rng,
+                                        rng=rng_perm,
                                     )
 
                                 # store to temporary container
@@ -466,12 +469,12 @@ def main(indices, args):
                             raise ValueError(f"Unsupported configuration of clustering bias")
 
                         kg, sn_samples, alm_kg, alm_sn_samples = (
-                            lensing_transform(kg, ia, ds, sn_samples, Aia, n_Aia, bta, np_seed=i_sobol + i_signal)
+                            lensing_transform(kg, ia, ds, sn_samples, Aia, n_Aia, bta, np_seed=None)
                             if store_lensing
                             else (None, None, None, None)
                         )
                         dg, pn_samples, alm_dg, alm_pn_samples = (
-                            clustering_transform(dg, tomo_bg, qdg, tomo_qbg, np_seed=i_sobol + i_signal)
+                            clustering_transform(dg, tomo_bg, qdg, tomo_qbg, np_seed=None)
                             if store_clustering
                             else (None, None, None, None)
                         )
@@ -626,7 +629,7 @@ def _get_lensing_transform(conf, pixel_file):
         for i, shape_noise in enumerate(sn_samples):
             shape_noise *= wl_mask
 
-            smooth_sn, alm_sn = lensing_smoothing(shape_noise, np_seed + i)
+            smooth_sn, alm_sn = lensing_smoothing(shape_noise, np_seed)
 
             smooth_sn_samples.append(smooth_sn)
             alm_sn_samples.append(alm_sn)
@@ -708,7 +711,7 @@ def _get_clustering_transform(conf, pixel_file):
         for i, pn in enumerate(pn_samples):
             pn *= gc_mask
 
-            smooth_pn, alm_smooth_pn = clustering_smoothing(pn, np_seed + i)
+            smooth_pn, alm_smooth_pn = clustering_smoothing(pn, np_seed + i if np_seed is not None else None)
 
             smooth_pn_samples.append(smooth_pn)
             alm_pn_samples.append(alm_smooth_pn)
