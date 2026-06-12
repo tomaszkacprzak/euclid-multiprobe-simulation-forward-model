@@ -336,6 +336,7 @@ def main(indices, args):
                 ):  
                     
                     LOGGER.info(f"Starting permutation {i_perm:04d}/{n_perms_per_cosmo} for cosmology {i_cosmo}/{n_cosmos_per_file} for file {tfr_file}")
+                    LOGGER.timer.start("permutation")
 
                     # if args.debug and i_signal > n_patches:
                     #     LOGGER.warning(f"Debug mode, only processing the first {n_patches} examples")
@@ -529,6 +530,8 @@ def main(indices, args):
                         num_total_examples += 1
                         LOGGER.debug(f"Writing example to {tfr_file} i_perm={i_perm}, i_patch={i_patch} i_signal={i_signal} kg.shape={kg.shape}, sn_samples.shape={sn_samples.shape}, dg.shape={dg.shape}, pn_samples.shape={pn_samples.shape}")
                         file_writer.write(serialized)
+
+                    LOGGER.info(f"Done with permutation {i_perm:04d} time taken {LOGGER.timer.elapsed('permutation')}")
 
 
         LOGGER.info(f"Done with index {index} after {LOGGER.timer.elapsed('index')}")
