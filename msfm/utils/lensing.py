@@ -49,12 +49,19 @@ def get_m_bias_distribution(conf=None):
     """
     conf = files.load_config(conf)
 
-    import tensorflow_probability as tfp
+    # import tensorflow_probability as tfp
 
-    m_bias_dist = tfp.distributions.MultivariateNormalDiag(
-        loc=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["mu"],
-        scale_diag=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"],
+    # m_bias_dist = tfp.distributions.MultivariateNormalDiag(
+    #     loc=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["mu"],
+    #     scale_diag=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"],
+    # )
+    from scipy.stats import multivariate_normal
+    m_bias_dist = multivariate_normal(
+        mean=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["mu"],
+        cov=np.diag(conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"])**2,
     )
+
+    m_bias_dist.sample = m_bias_dist.rvs # for compatibility with tensorflow_probability
 
     return m_bias_dist
 
@@ -235,7 +242,7 @@ def noise_gen_in_place(gamma_abs, w, pix, base_patch_pix, n_pix, n_noise_per_sig
     return gamma1_patch.numpy(), gamma2_patch.numpy()
 
 
-def noise_gen_numba(counts, gamma_abs, weights, n_noise_per_signal):
+def noise_gen_numba(counts, gamma_abs, weights, n_noise_per_signal, rng):
     """
     Python wrapper: normalizes input types before calling the JIT function.
     """
@@ -245,7 +252,7 @@ def noise_gen_numba(counts, gamma_abs, weights, n_noise_per_signal):
     weights = np.ascontiguousarray(weights, dtype=np.float32)
 
     # return noise_gen_numba_impl(counts, gamma_abs, weights, int(n_noise_per_signal))
-    return noise_gen_numba_parallel(counts, gamma_abs, weights, int(n_noise_per_signal))
+    return noise_gen_numba_parallel(counts, gamma_abs, weights, int(n_noise_per_signal), rng)
 
 @njit(cache=True)
 def noise_gen_numba_impl(counts, gamma_abs, weights, n_noise_per_signal):
@@ -301,7 +308,7 @@ def noise_gen_numba_impl(counts, gamma_abs, weights, n_noise_per_signal):
 
 
 @njit(parallel=True, cache=True)
-def noise_gen_numba_parallel(counts, gamma_abs, weights, n_noise_per_signal):
+def noise_gen_numba_parallel(counts, gamma_abs, weights, n_noise_per_signal, rng):
     """
     Parallel NumPy/Numba version.
 
@@ -329,12 +336,12 @@ def noise_gen_numba_parallel(counts, gamma_abs, weights, n_noise_per_signal):
 
         for _ in range(n_gals):
             for j in range(n_noise_per_signal):
-                idx = np.random.randint(0, n_cat)
+                idx = rng.integers(0, n_cat)
 
                 gamma = gamma_abs[idx]
                 w = weights[idx]
 
-                phase = two_pi * np.random.random()
+                phase = two_pi * rng.random()
 
                 g1_out[pix, j] += np.float32(np.cos(phase) * gamma * w)
                 g2_out[pix, j] += np.float32(np.sin(phase) * gamma * w)
@@ -377,6 +384,7 @@ def noise_gen_in_place_numba_parallel_core(
     pix,
     patch_lookup,
     n_noise_per_signal,
+    rng,
 ):
     """
     Numba core for in-place-style noise generation.
@@ -427,7 +435,7 @@ def noise_gen_in_place_numba_parallel_core(
             gamma = gamma_abs[gal]
             w = weights[gal]
 
-            phase = two_pi * np.random.random()
+            phase = two_pi * rng.random()
 
             gamma1_patch[patch_idx, j] += np.float32(np.cos(phase) * gamma * w)
             gamma2_patch[patch_idx, j] += np.float32(np.sin(phase) * gamma * w)
@@ -452,6 +460,7 @@ def noise_gen_in_place_numba(
     base_patch_pix,
     n_pix,
     n_noise_per_signal,
+    rng,
 ):
 
     LOGGER.warning("noise_gen_in_place_numba_parallel: This code is not tested yet")

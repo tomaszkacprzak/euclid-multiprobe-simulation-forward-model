@@ -406,7 +406,7 @@ def data_vector_to_smoothed_data_vector(
 
 
 def data_vector_to_grf_data_vector(
-    np_seed: int,
+    np_seed: int|None,
     data_vector: np.ndarray,
     data_vec_pix: np.ndarray,
     n_side: int,
