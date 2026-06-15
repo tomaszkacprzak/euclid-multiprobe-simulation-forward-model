@@ -65,6 +65,23 @@ def get_m_bias_distribution(conf=None):
 
     return m_bias_dist
 
+def get_Emode(method, gamma1_patch, gamma2_patch, gamma2kappa_fac, n_side, hp_datapath):
+
+    if method == "mode_removal":
+
+        kappa_patch = mode_removal(gamma1_patch, gamma2_patch, gamma2kappa_fac, n_side,
+                                   apply_smoothing=False,
+                                   hp_datapath=hp_datapath
+                                   )
+    elif method == "real_space":
+
+        raise NotImplementedError("Real space mode removal is not implemented yet")
+
+
+    return kappa_patch
+
+
+        
 
 def mode_removal(
     gamma1_patch,

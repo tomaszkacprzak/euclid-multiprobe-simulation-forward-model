@@ -405,6 +405,7 @@ def data_vector_to_smoothed_data_vector(
 # Gaussian Random Fields ##############################################################################################
 
 
+
 def data_vector_to_grf_data_vector(
     np_seed: int|None,
     data_vector: np.ndarray,
@@ -441,6 +442,28 @@ def data_vector_to_grf_data_vector(
         np.array: Smoothed data vector(s) of shape (len(data_vec_pix),) or (len(data_vec_pix), n_z_bins).
     """
 
+    def _process_single_map(data_vector, l, l_min, l_max, theta_fwhm):
+
+        full_map = np.zeros((n_pix), dtype=np.float32)
+        full_map[data_vec_pix] = data_vector
+        full_map = hp.reorder(full_map, n2r=True)
+        alm = hp.map2alm(full_map, pol=False, use_pixel_weights=True, datapath=hp_datapath)
+
+        # smoothing
+        high_pass_fac = gaussian_high_pass_factor_alm(l, l_min[i_z], hard_cut=hard_cut)
+        low_pass_fac = gaussian_low_pass_factor_alm(l, l_max[i_z], theta_fwhm[i_z], arcmin, hard_cut=hard_cut)
+        alm = alm * high_pass_fac * low_pass_fac
+
+        # make a Gaussian Random Field
+        cl = hp.alm2cl(alm)
+        np.random.seed(np_seed)
+        grf = hp.synfast(cl, nside=n_side, pol=False).astype(np.float32)
+        grf = hp.reorder(grf, r2n=True)
+
+        return alm, grf[data_vec_pix]
+
+
+
     n_pix = hp.nside2npix(n_side)
 
     if mask is not None:
@@ -457,6 +480,7 @@ def data_vector_to_grf_data_vector(
 
     # multiple tomographic bins along final axis
     if data_vector.ndim == 2:
+
         n_z = data_vector.shape[1]
 
         if l_min is None:
@@ -475,55 +499,20 @@ def data_vector_to_grf_data_vector(
 
         alms = []
         for i_z in range(n_z):
-            full_map = np.zeros((n_pix), dtype=np.float32)
-            full_map[data_vec_pix] = data_vector[:, i_z]
-            full_map = hp.reorder(full_map, n2r=True)
 
-            alm = hp.map2alm(full_map, pol=False, use_pixel_weights=True, datapath=hp_datapath)
-
-            # smoothing
-            high_pass_fac = gaussian_high_pass_factor_alm(l, l_min[i_z], hard_cut=hard_cut)
-            low_pass_fac = gaussian_low_pass_factor_alm(l, l_max[i_z], theta_fwhm[i_z], arcmin, hard_cut=hard_cut)
-            alm = alm * high_pass_fac * low_pass_fac
-
-            # make a Gaussian Random Field
-            cl = hp.alm2cl(alm)
-            np.random.seed(np_seed)
-            grf = hp.synfast(cl, nside=n_side, pol=False).astype(np.float32)
-            grf = hp.reorder(grf, r2n=True)
-
-            # padding is populated too
-            data_vector[:, i_z] = grf[data_vec_pix]
-
+            alm, data_vector[:, i_z] = _process_single_map(data_vector[:, i_z], l, l_min[i_z], l_max[i_z], theta_fwhm[i_z])
             alms.append(alm)
 
         alm = np.stack(alms, axis=1)
 
     # single map
     elif data_vector.ndim == 1:
+        
         assert (isinstance(l_min, int) and isinstance(l_max, int)) or (
             isinstance(l_min, int) and isinstance(theta_fwhm, float)
         )
 
-        full_map = np.zeros(n_pix, dtype=np.float32)
-        full_map[data_vec_pix] = data_vector
-        full_map = hp.reorder(full_map, n2r=True)
-
-        alm = hp.map2alm(full_map, pol=False, use_pixel_weights=True, datapath=hp_datapath)
-
-        # smoothing
-        high_pass_fac = gaussian_high_pass_factor_alm(l, l_min, hard_cut=hard_cut)
-        low_pass_fac = gaussian_low_pass_factor_alm(l, l_max, theta_fwhm, arcmin, hard_cut=hard_cut)
-        alm = alm * high_pass_fac * low_pass_fac
-
-        # make a Gaussian Random Field
-        cl = hp.alm2cl(alm)
-        np.random.seed(np_seed)
-        grf = hp.synfast(cl, nside=n_side, pol=False).astype(np.float32)
-        grf = hp.reorder(grf, r2n=True)
-
-        # padding is populated too
-        data_vector = grf[data_vec_pix]
+        data_vector, alm = _process_single_map(data_vector, data_vec_pix, l, l_min, l_max, theta_fwhm)
 
     else:
         raise ValueError(f"Unknown data_vector.ndim: {data_vector.ndim}, must be 1 or 2")

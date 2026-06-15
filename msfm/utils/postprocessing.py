@@ -371,14 +371,14 @@ def postprocess_lensing(kappa_full_sky, conf, pixel_file, i_z):
         gamma2_patch *= gamma2_sign
 
         # kappa_patch is a full sky map, but only the patch is occupied
-        kappa_patch = lensing.mode_removal(
-            gamma1_patch,
-            gamma2_patch,
-            gamma2kappa_fac,
-            n_side,
-            apply_smoothing=False,
-            hp_datapath=hp_datapath,
-        )
+        kappa_patch =lensing.get_Emode(
+                method=conf['analysis']["lensing_EB_method"],
+                gamma1_patch=gamma1_patch,
+                gamma2_patch=gamma2_patch,
+                gamma2kappa_fac=gamma2kappa_fac,
+                n_side=n_side,
+                hp_datapath=hp_datapath,
+            )
 
         # cut out padded data vector
         kappa_dv = maps.map_to_data_vec(
@@ -458,7 +458,9 @@ def postprocess_shape_noise(
 
     kappa_dvs = np.zeros((n_patches, n_noise_per_signal, data_vec_len), dtype=np.float32)
     for i_patch, patch_pix in enumerate(patches_pix):
+        
         if sc_mode in ["fixed", "prior"]:
+         
             if sc_mode == "prior" and bsc_samples is not None:
                 bias_patch = bsc_samples[(i_perm * n_patches) + i_patch]
                 delta_patch = delta_full_sky[patch_pix]
@@ -472,14 +474,13 @@ def postprocess_shape_noise(
 
             # vectorized sampling, shape (len(counts), n_noise_per_signal)
             gamma1, gamma2 = lensing.noise_gen_numba(counts, gamma_abs, w, n_noise_per_signal, rng)
+        
         else:
 
             gamma1, gamma2 = lensing.noise_gen_in_place_numba(
                 gamma_abs, w, pix_cat, base_patch_pix, n_pix, n_noise_per_signal, rng=rng
             )
 
-
-        # not vectorized because of the healpy alm transform
         gamma1_patch = np.zeros(n_pix, dtype=np.float32)
         gamma2_patch = np.zeros(n_pix, dtype=np.float32)
         for i_noise in range(n_noise_per_signal):
@@ -490,12 +491,12 @@ def postprocess_shape_noise(
             gamma2_patch[:] = 0
             gamma2_patch[base_patch_pix] = gamma2[:, i_noise]
 
-            kappa_patch = lensing.mode_removal(
-                gamma1_patch,
-                gamma2_patch,
-                gamma2kappa_fac,
-                n_side,
-                apply_smoothing=False,
+            kappa_patch =lensing.get_Emode(
+                method="mode_removal",
+                gamma1_patch=gamma1_patch,
+                gamma2_patch=gamma2_patch,
+                gamma2kappa_fac=gamma2kappa_fac,
+                n_side=n_side,
                 hp_datapath=hp_datapath,
             )
 

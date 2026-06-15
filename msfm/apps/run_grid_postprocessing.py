@@ -541,7 +541,7 @@ def main(indices, args):
         
 
 
-def _data_vector_smoothing(dv, l_min, l_max, theta_fwhm, np_seed, conf, pixel_file, mask):
+def _data_vector_alms_and_smoothing(dv, l_min, l_max, theta_fwhm, np_seed, conf, pixel_file, mask):
     # Gaussian Random Field
     if conf["analysis"]["modelling"]["degrade_to_grf"]:
         dv, alm = scales.data_vector_to_grf_data_vector(
@@ -583,7 +583,7 @@ def _get_lensing_transform(conf, pixel_file):
     wl_mask = files.get_tomo_dv_masks(conf)["WL"]
 
     def lensing_smoothing(kg, np_seed):
-        kg, alm = _data_vector_smoothing(
+        kg, alm = _data_vector_alms_and_smoothing(
             kg,
             conf["analysis"]["scale_cuts"]["WL"]["l_min"],
             conf["analysis"]["scale_cuts"]["WL"]["l_max"],
@@ -659,7 +659,7 @@ def _get_clustering_transform(conf, pixel_file):
         tomo_gc_sys_dv = None
 
     def clustering_smoothing(dg, np_seed):
-        dg, alm = _data_vector_smoothing(
+        dg, alm = _data_vector_alms_and_smoothing(
             dg,
             conf["analysis"]["scale_cuts"]["GC"]["l_min"],
             conf["analysis"]["scale_cuts"]["GC"]["l_max"],
