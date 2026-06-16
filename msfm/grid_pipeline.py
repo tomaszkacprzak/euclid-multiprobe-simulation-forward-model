@@ -189,7 +189,7 @@ class GridPipeline(MSFMpipeline):
         Returns:
             tf.data.Dataset: A deterministic dataset that goes through the grid cosmologies in the order of the sobol
                 seeds. The output is a tuple like (data_vectors, cosmo, index), where data_vectors is a tensor of shape
-            (batch_size, n_pix, n_z_metacal + n_z_maglim), cosmo is a label distributed on the Sobol sequence and index
+            (batch_size, n_pix, n_z_WL + n_z_GC), cosmo is a label distributed on the Sobol sequence and index
             is a tuple containing (i_sobol, i_signal, i_noise).
         """
 
@@ -278,8 +278,8 @@ class GridPipeline(MSFMpipeline):
                 noise_indices,
                 # dimensions
                 n_pix=self.n_dv_pix,
-                n_z_metacal=self.n_z_metacal,
-                n_z_maglim=self.n_z_maglim,
+                n_z_WL=self.n_z_WL,
+                n_z_GC=self.n_z_GC,
                 n_z_cross=self.n_z_cross,
                 n_params=self.n_all_params,
                 n_noise=self.n_noise_total,
@@ -415,13 +415,13 @@ class GridPipeline(MSFMpipeline):
 
         Args:
             data_vectors (dict): Depending on with_clustering and with_lensing, contains the tensors kg (sum of signal
-                and intrinsic alignment) and sn (single realization) of shape (n_pix, n_z_metacal) and dg of shape
-                (n_pix, n_z_maglim).
+                and intrinsic alignment) and sn (single realization) of shape (n_pix, n_z_WL) and dg of shape
+                (n_pix, n_z_GC).
             index (tuple): A tuple of two integers (i_sobol, i_noise).
 
         Returns:
             tuple: (out_tensor, cosmo, index) the elements of the dataset, where out_tensor has shape
-            (batch_size, n_pix, n_z_metacal + n_z_maglim), cosmo is a label distributed on the Sobol sequence and index
+            (batch_size, n_pix, n_z_WL + n_z_GC), cosmo is a label distributed on the Sobol sequence and index
             is a tuple containing (i_sobol, i_signal, i_noise).
         """
         LOGGER.warning(f"Tracing _augmentations")
@@ -450,7 +450,7 @@ class GridPipeline(MSFMpipeline):
                         data_vectors["dg"] = self.normalize_clustering(data_vectors["dg"])
 
                     # masking
-                    data_vectors["dg"] *= self.masks_maglim
+                    data_vectors["dg"] *= self.masks_GC
 
                     map_tensor = data_vectors["dg"]
 
@@ -459,7 +459,7 @@ class GridPipeline(MSFMpipeline):
 
                     # masking NOTE this assumes a single mask per tomographic bin
                     mask = tf.math.reduce_prod(self.masks_metacal, axis=-1) * tf.math.reduce_prod(
-                        self.masks_maglim, axis=-1
+                        self.masks_GC, axis=-1
                     )
                     mask = tf.expand_dims(mask, axis=-1)
                     data_vectors["xg"] *= mask

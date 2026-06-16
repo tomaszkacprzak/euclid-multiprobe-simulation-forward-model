@@ -89,20 +89,20 @@ class MSFMpipeline:
         self.return_cls = return_cls
         assert self.return_maps or self.return_cls, "At least one of return_maps and return_cls must be True"
 
-        self.n_z_metacal = len(self.conf["survey"]["lensing"]["z_bins"])
-        self.n_z_maglim = len(self.conf["survey"]["clustering"]["z_bins"])
+        self.n_z_WL = len(self.conf["survey"]["lensing"]["z_bins"])
+        self.n_z_GC = len(self.conf["survey"]["clustering"]["z_bins"])
 
         # pixel file
         self.data_vec_pix, _, _, _ = files.load_pixel_file(self.conf)
         self.n_dv_pix = len(self.data_vec_pix)
 
         masks_dict = files.get_tomo_dv_masks(self.conf)
-        self.masks_metacal = tf.constant(masks_dict["metacal"], dtype=tf.float32)
-        self.masks_maglim = tf.constant(masks_dict["maglim"], dtype=tf.float32)
+        self.masks_WL = tf.constant(masks_dict["metacal"], dtype=tf.float32)
+        self.masks_GC = tf.constant(masks_dict["maglim"], dtype=tf.float32)
 
         if not self.with_padding:
             # only keep indices that are in all (per tomographic bin and galaxy sample) masks
-            self.mask_total = tf.reduce_prod(tf.concat([self.masks_metacal, self.masks_maglim], axis=-1), axis=-1)
+            self.mask_total = tf.reduce_prod(tf.concat([self.masks_WL, self.masks_GC], axis=-1), axis=-1)
             self.mask_total = tf.cast(self.mask_total, dtype=tf.bool)
             self.patch_pix = tf.boolean_mask(self.data_vec_pix, self.mask_total, axis=0)
             self.n_patch_pix = len(self.patch_pix)
@@ -137,8 +137,8 @@ class MSFMpipeline:
         self.n_cls = 3 * self.conf["analysis"]["n_side"]
         self.n_z_cross = len(
             cross_statistics.get_cross_bin_indices(
-                self.n_z_metacal,
-                self.n_z_maglim,
+                self.n_z_WL,
+                self.n_z_GC,
                 True,
                 True,
                 True,
