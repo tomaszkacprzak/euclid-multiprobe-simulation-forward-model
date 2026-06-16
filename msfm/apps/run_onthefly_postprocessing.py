@@ -19,7 +19,9 @@ Meant for
 
 import numpy as np
 import tensorflow as tf
-import os, argparse, warnings, time, yaml, h5py, pickle, glob, sys
+import os, argparse, warnings, time, yaml, h5py, pickle, glob, sys, io
+import webdataset
+import torch
 
 
 from msfm.utils import (
@@ -57,8 +59,9 @@ def setup(args):
     parser.add_argument(
         "command",
         type=str,
-        default='postprocess',
-        help="command to run, either 'postprocess' or 'test_pipeline'",
+        default='wds',
+        choices=('wds', 'test'),
+        help="command to run",
     )
     parser.add_argument(
         "--n_files",
@@ -212,14 +215,14 @@ def main(indices, args):
             args.dir_out = os.path.join(args.dir_out, "debug")
             os.makedirs(args.dir_out, exist_ok=True)
 
-        tfr_file = filenames.get_filename_tfrecords(
+        wds_file = filenames.get_filename_webdataset(
             args.dir_out,
             tag=conf["survey"]["name"] + args.file_suffix,
             index=index,
             simset="grid",
             with_bary=baryonified,
         )
-        LOGGER.info(f"Index {index} is writing to {tfr_file}")
+        LOGGER.info(f"Index {index} is writing to {wds_file}")
 
         # index for the cosmological parameters
         i_cosmo_start = index * n_cosmos_per_file
@@ -228,7 +231,9 @@ def main(indices, args):
 
 
         num_total_examples = 0
-        with tf.io.TFRecordWriter(tfr_file) as file_writer:
+        # with tf.io.TFRecordWriter(wds_file) as file_writer:
+        with webdataset.TarWriter(wds_file, encoder=True) as file_writer:
+
             # loop over the cosmological parameters
             for i_cosmo, cosmo_dir_in in LOGGER.progressbar(
                 zip(range(i_cosmo_start, i_cosmo_end), cosmo_dirs_in[i_cosmo_start:i_cosmo_end]),
@@ -240,7 +245,7 @@ def main(indices, args):
 
 
                 # constants
-                i_sobol, cosmo = prior.extend_sobol_sequence(conf, cosmo_params_info, i_cosmo)
+                cosmo = prior.get_hard_parameters(conf, cosmo_params_info, i_cosmo)
                 i_sobol = int(cosmo_dir_in[-7:-1])
                 n_patches = conf["analysis"]["n_patches"]
                 n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
@@ -256,7 +261,7 @@ def main(indices, args):
                 ):  
 
                                         
-                    LOGGER.info(f"Permutation {i_perm+1: 2d}/{n_perms_per_cosmo: 2d} for cosmology {i_cosmo+1: 2d}/{n_cosmos_per_file: 2d} for file {tfr_file}")
+                    LOGGER.info(f"Permutation {i_perm+1: 2d}/{n_perms_per_cosmo: 2d} for cosmology {i_cosmo+1: 2d}/{n_cosmos_per_file: 2d} for file {wds_file}")
                     LOGGER.timer.start("permutation")
 
                     ##
@@ -277,26 +282,28 @@ def main(indices, args):
                                 patch_maps[m_name].append(patch_map_[..., np.newaxis]) # shape n_pix, n_z_bins
                             patch_maps[m_name] = np.concatenate(patch_maps[m_name], axis=-1)
 
-                        # serialize to binary blob
-                        serialized = tfrecords.parse_forward_onthefly(
-                            **patch_maps, 
-                            cosmo = cosmo, 
-                            i_sobol = i_sobol, 
-                            i_signal = i_signal
-                        ).SerializeToString()
-
-                        # verify readout
-                        tfrecords.verify_tfrecord_onthefly(serialized, 
-                            **patch_maps, 
-                            cosmo = cosmo, 
-                            i_sobol = i_sobol, 
-                            i_signal = i_signal)
-
-                        # write to file
-                        file_writer.write(serialized)
+                        # build output dict to be stored
+                        dict_out = {
+                                "__key__": f"{i_signal:09d}",
+                                "γg.pth": torch_bytes(torch.from_numpy(patch_maps["γg"])),
+                                "γa.pth": torch_bytes(torch.from_numpy(patch_maps["γa"])),
+                                "γd.pth": torch_bytes(torch.from_numpy(patch_maps["γd"])),
+                                "ds.pth": torch_bytes(torch.from_numpy(patch_maps["ds"])),
+                                "dg.pth": torch_bytes(torch.from_numpy(patch_maps["dg"])),
+                                "qg.pth": torch_bytes(torch.from_numpy(patch_maps["qg"])),
+                                "cosmo.pth": torch_bytes(torch.from_numpy(cosmo)),
+                                "i_sobol.index": int(i_sobol),
+                                "i_signal.index": int(i_signal),
+                                "n_params.count": int(cosmo.shape[0]),
+                                "n_pix.count": int(patch_maps["γg"].shape[0]),
+                                "n_z_WL.count": int(patch_maps["γg"].shape[1]),
+                                "n_z_GC.count": int(patch_maps["dg"].shape[1]),
+                            }
+                        # writeout to webdataset
+                        file_writer.write(dict_out)
 
                         i_signal += 1
-                        LOGGER.info(f"Writing example to {tfr_file} i_cosmo={i_cosmo:>5d} i_perm={i_perm:>2d}, i_patch={i_patch:>2d}, i_signal={i_signal:>8d}")
+                        LOGGER.info(f"Writing example to {wds_file} i_cosmo={i_cosmo:>5d} i_perm={i_perm:>2d}, i_patch={i_patch:>2d}, i_signal={i_signal:>8d}")
                         for key in patch_maps.keys():
                             LOGGER.debug(f"{key}.shape={patch_maps[key].shape}, dtype={patch_maps[key].dtype}")
 
@@ -386,24 +393,31 @@ def get_postprocessed_maps(conf, full_maps_file):
 
     return full_sky_maps
 
+def torch_bytes(x: torch.Tensor) -> bytes:
+    buffer = io.BytesIO()
+    torch.save(x, buffer)
+    return buffer.getvalue()
+
 if __name__ == "__main__":
 
     args = setup(sys.argv[1:])
 
-    if args.command == 'postprocess':
+    if args.command == 'wds':
 
         indices = configuration.get_indices(args.indices)
         main(indices=indices, args=args)
 
     elif args.command == 'test_pipeline':
 
-        # test the onthefly_pipeline
+        pass
 
-        from msfm.onthefly_pipeline import OntheflyPipeline
-        onthefly_pipeline = OntheflyPipeline(conf=conf)
-        tfr_pattern = os.path.join(args.dir_out, "*.tfrecord")
-        dset = onthefly_pipeline.get_dset(tfr_pattern=tfr_pattern, local_batch_size=2)
-        for data_vectors, cosmo, index in dset:
-            print(data_vectors.shape, cosmo, index)
-            break
+        # # test the onthefly_pipeline
+
+        # from msfm.onthefly_pipeline import OntheflyPipeline
+        # onthefly_pipeline = OntheflyPipeline(conf=conf)
+        # tfr_pattern = os.path.join(args.dir_out, "*.tfrecord")
+        # dset = onthefly_pipeline.get_dset(tfr_pattern=tfr_pattern, local_batch_size=2)
+        # for data_vectors, cosmo, index in dset:
+        #     print(data_vectors.shape, cosmo, index)
+        #     break
 

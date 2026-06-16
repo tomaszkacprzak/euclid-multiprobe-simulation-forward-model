@@ -40,7 +40,7 @@ dependencies = [
     "matplotlib",
     "astropy>=6.1.0",
     "cuHPX",
-    "tfrecord[torch]",
+    "webdataset",
 ]
 
 [project.optional-dependencies]
