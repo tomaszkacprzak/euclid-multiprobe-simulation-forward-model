@@ -33,13 +33,8 @@ class OntheflyPipeline(MSFMpipeline):
         params: list = None,
         with_lensing: bool = True,
         with_clustering: bool = True,
-        with_cross: bool = False,
-        # format
-        apply_norm: bool = True,
         with_padding: bool = True,
         z_bin_inds: list = None,
-        return_maps: bool = True,
-        return_cls: bool = False,
     ):
         """Set up the physics parameters of the pipeline.
 
@@ -49,17 +44,11 @@ class OntheflyPipeline(MSFMpipeline):
             params (list): List of the cosmological parameters of interest. Fiducial: perturbations, grid: labels, onthefly: labels.
             with_lensing (bool, optional): Whether to include the lensing maps. Defaults to True.
             with_clustering (bool, optional): Whether to include the clustering maps. Defaults to True.
-            with_cross (bool, optional): Whether to include the cross-correlation between lensing and clustering. 
-                Defaults to False.
-            apply_norm (bool, optional): Whether to rescale the maps to approximate unit range. Defaults to True.
             with_padding (bool, optional): Whether to include the padding of the data vectors (the healpy DeepSphere \
                 networks) need this. Defaults to True.
             z_bin_inds (list, optional): Specify the indices of the redshift bins to be included. Note that this is
                 mainly meant for testing purposes and is inefficient, since all redshift bins are loaded from the
                 .tfrecords nonetheless. Defaults to None, then all redshift bins are kept.
-            return_maps (bool, optional): Whether to return the maps. Defaults to True.
-            return_cls (bool, optional): Whether to return the cls. Defaults to True.
-            return_only_cross_maps (bool, optional): Whether to return only the cross maps. Defaults to False.
         """
         super().__init__(
             conf=conf,
@@ -76,23 +65,18 @@ class OntheflyPipeline(MSFMpipeline):
         tfr_pattern: str,
         local_batch_size: int,
         example_indices: Union[int, float, list, range] = None,
-        # performance
         n_readers: int = 8,
         n_workers: int = None,
         n_prefetch: int = None,
         file_name_shuffle_buffer: int = 128,
         examples_shuffle_buffer: int = 128,
-        # training/evaluation
         is_eval: bool = True,
         drop_remainder: bool = None,
         eval_seed: int = 33,
         file_name_shuffle_seed: int = 11,
         examples_shuffle_seed: int = 12,
-        # distribution
         input_context: tf.distribute.InputContext = None,
-        # nside downsampling
         downsample_nside: int = None,
-        parent_output_idx=None,
     ) -> tf.data.Dataset:
         """Builds the tf.data.Dataset from the given file name pattern and performance related parameters.
 
@@ -133,9 +117,7 @@ class OntheflyPipeline(MSFMpipeline):
 
         Returns:
             tf.data.Dataset: A deterministic dataset that goes through the grid cosmologies in the order of the sobol
-                seeds. The output is a tuple like (data_vectors, cosmo, index), where data_vectors is a tensor of shape
-            (batch_size, n_pix, n_z_WL + n_z_GC), cosmo is a label distributed on the Sobol sequence and index
-            is a tuple containing (i_sobol, i_signal, i_noise).
+                seeds. The output is a tuple with maps, cosmo label vector, and a index tuple containing (i_sobol, i_signal, i_noise).
         """
 
         # TODO: implement this
