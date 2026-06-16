@@ -76,3 +76,6 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+
+[tool.uv.sources]
+cuHPX = { git = "https://github.com/NVlabs/cuHPX" }

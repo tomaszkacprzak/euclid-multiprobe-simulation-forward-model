@@ -21,7 +21,7 @@ warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
 
 
-class GridPipeline(MSFMpipeline):
+class OntheflyPipeline(MSFMpipeline):
     """
     Sets up a tf.data.Dataset for the grid cosmologies.
     """
@@ -399,7 +399,7 @@ class GridPipeline(MSFMpipeline):
         LOGGER.warning(f"Tracing _augmentations")
         LOGGER.info(f"Running on the data_vectors.keys() = {data_vectors.keys()}")
 
-        
+
 
 
 

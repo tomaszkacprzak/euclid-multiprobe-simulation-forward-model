@@ -55,6 +55,12 @@ def setup(args):
     parser = argparse.ArgumentParser(description=description, add_help=True)
 
     parser.add_argument(
+        "command",
+        type=str,
+        default='postprocess',
+        help="command to run, either 'postprocess' or 'test_pipeline'",
+    )
+    parser.add_argument(
         "--n_files",
         type=int,
         default=2500,
@@ -168,27 +174,22 @@ def main(indices, args):
 
     # CosmoGrid
     n_patches = conf["analysis"]["n_patches"]
-    n_cosmos = conf["analysis"]["grid"]["n_cosmos"]
+    n_cosmos = 2501 # 2500 grid and 1 fiducial
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
-    n_examples_per_cosmo = n_patches * n_perms_per_cosmo * n_noise_per_signal
+    n_examples_per_cosmo = n_patches * n_perms_per_cosmo
     LOGGER.info(
-        f"For every cosmology, theres {n_examples_per_cosmo} examples: "
-        f"{n_patches} patches times {n_perms_per_cosmo} permutations times {n_noise_per_signal} noise realizations"
+        f"For every cosmology, theres {n_examples_per_cosmo} examples: {n_patches} patches times {n_perms_per_cosmo} permutations"
     )
 
     # modeling
     baryonified = conf["analysis"]["modelling"]["baryonified"]
 
     # .tfrecords
-    if n_cosmos % args.n_files == 0:
-        n_cosmos_per_file = n_cosmos // args.n_files
-        n_examples_per_file = n_examples_per_cosmo * n_cosmos_per_file
-        LOGGER.info(f"The number of files implies {n_cosmos_per_file} cosmological parameters per .tfrecord file")
-    else:
-        raise ValueError(
-            f"The total number of cosmologies {n_cosmos} has to be evenly divisible by the number of files {args.n_files}"
-        )
+    n_cosmos_per_file = 1
+    n_examples_per_file = n_examples_per_cosmo
+    LOGGER.info(f"The number of files implies {n_cosmos_per_file} cosmological parameters per .tfrecord file")
+
     LOGGER.info(
         f"In total, there are n_examples_per_cosmo * n_cosmos_per_file = {n_examples_per_cosmo} * {n_cosmos_per_file}"
         f" = {n_examples_per_file} examples per file"
@@ -388,6 +389,21 @@ def get_postprocessed_maps(conf, full_maps_file):
 if __name__ == "__main__":
 
     args = setup(sys.argv[1:])
-    indices = configuration.get_indices(args.indices)
-    main(indices=indices, args=args)
+
+    if args.command == 'postprocess':
+
+        indices = configuration.get_indices(args.indices)
+        main(indices=indices, args=args)
+
+    elif args.command == 'test_pipeline':
+
+        # test the onthefly_pipeline
+
+        from msfm.onthefly_pipeline import OntheflyPipeline
+        onthefly_pipeline = OntheflyPipeline(conf=conf)
+        tfr_pattern = os.path.join(args.dir_out, "*.tfrecord")
+        dset = onthefly_pipeline.get_dset(tfr_pattern=tfr_pattern, local_batch_size=2)
+        for data_vectors, cosmo, index in dset:
+            print(data_vectors.shape, cosmo, index)
+            break
 
