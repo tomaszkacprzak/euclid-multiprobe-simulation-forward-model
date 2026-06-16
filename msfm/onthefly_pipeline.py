@@ -66,61 +66,16 @@ class OntheflyPipeline(MSFMpipeline):
             params=params,
             with_lensing=with_lensing,
             with_clustering=with_clustering,
-            with_cross=with_cross,
-            apply_norm=apply_norm,
-            with_padding=with_padding,
-            z_bin_inds=z_bin_inds,
-            return_maps=return_maps,
-            return_cls=return_cls,
+            z_bin_inds=z_bin_inds
         )
 
-        # used to return the correct labels
-        self.all_params = parameters.get_parameters(conf=conf)
-
-        # used to reshape the stored tensors, and for nothing else
-        self.n_all_params = len(self.all_params)
-
-        self.n_noise_total = self.conf["analysis"]["grid"]["n_noise_per_signal"]
-        self.n_signal_total = self.conf["analysis"]["n_patches"] * self.conf["analysis"]["grid"]["n_perms_per_cosmo"]
-
-    def _parse_indices(
-        self, indices: Union[int, float, list, range], name: str, fallback_length: int, is_eval: bool = False
-    ) -> list:
-        if indices is None:
-            parsed_indices = list(range(fallback_length))
-            LOGGER.info(f"Including all {len(parsed_indices)} {name} = {parsed_indices}")
-            return parsed_indices
-        if isinstance(indices, float):
-            assert 0.0 < indices < 1.0, f"for a float, {name} = {indices} must be between 0 and 1"
-            split_idx = int(indices * fallback_length)
-            if is_eval:
-                parsed_indices = list(range(split_idx, fallback_length))
-                LOGGER.warning(f"Using validation split ({1.0 - indices:<.2%})")
-            else:
-                parsed_indices = list(range(0, split_idx))
-                LOGGER.warning(f"Using training split ({indices:<.2%})")
-        elif isinstance(indices, int):
-            assert indices >= 1, f"for an integer, {name} = {indices} must be >= 1"
-            parsed_indices = list(range(indices))
-        elif isinstance(indices, list):
-            assert len(indices) >= 1, f"{name} = {indices} must be a list of length >= 1"
-            assert all(isinstance(i, int) for i in indices), f"All elements in {name} must be integers"
-            parsed_indices = indices
-        elif isinstance(indices, range):
-            parsed_indices = list(indices)
-        else:
-            raise TypeError(f"{name} = {indices} must be an integer, float, a list of integers or a range")
-
-        LOGGER.info(f"Including {len(parsed_indices)} {name} = {parsed_indices}")
-
-        return parsed_indices
+        # TODO: implement this
 
     def get_dset(
         self,
         tfr_pattern: str,
         local_batch_size: int,
-        noise_indices: Union[int, float, list, range] = None,
-        signal_indices: Union[int, float, list, range] = None,
+        example_indices: Union[int, float, list, range] = None,
         # performance
         n_readers: int = 8,
         n_workers: int = None,
@@ -185,4 +140,8 @@ class OntheflyPipeline(MSFMpipeline):
 
         # TODO: implement this
 
-        return map_tensor, cl_tensor, cosmo, (i_sobol, i_signal, i_noise)
+        
+
+        LOGGER.info(f"Successfully generated the grid set with element_spec {dset.element_spec}")
+        return dset
+
