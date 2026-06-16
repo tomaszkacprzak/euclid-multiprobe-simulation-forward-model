@@ -361,11 +361,13 @@ def main(indices, args):
                             return np.concatenate(xs, axis=-1)
 
                     kg_examples = concat_probe_zbins("kg")
+                    γg_examples = concat_probe_zbins("γg")
                     ia_examples = concat_probe_zbins("ia")
                     ds_examples = concat_probe_zbins("ds")
                     sn_examples = concat_probe_zbins("sn")
                     dg_examples = concat_probe_zbins("dg")
                     qg_examples = concat_probe_zbins("qg")
+                    
 
                     for i_patch in range(n_patches):
 
@@ -373,6 +375,7 @@ def main(indices, args):
                         LOGGER.debug(f"                i_perm={i_perm}, i_patch={i_patch}, i_signal={i_signal}")
 
                         kg = kg_examples[i_patch]
+                        γg = γg_examples[i_patch]
                         ia = ia_examples[i_patch]
                         ds = ds_examples[i_patch]
                         sn = sn_examples[i_patch]
@@ -575,19 +578,19 @@ def _get_lensing_transform(conf, pixel_file):
         kg *= wl_mask
         kg, alm_kg = lensing_smoothing(kg, np_seed)
 
-        smooth_sn_samples, alm_sn_samples = [], []
+        smooth_sn, alm_sn = [], []
         for i, shape_noise in enumerate(sn_samples):
             shape_noise *= wl_mask
 
             smooth_sn, alm_sn = lensing_smoothing(shape_noise, np_seed)
 
-            smooth_sn_samples.append(smooth_sn)
-            alm_sn_samples.append(alm_sn)
+            smooth_sn.append(smooth_sn)
+            alm_sn.append(alm_sn)
 
-        sn_samples = np.stack(smooth_sn_samples, axis=0)
-        alm_sn_samples = np.stack(alm_sn_samples, axis=0)
+        sn_samples = np.stack(smooth_sn, axis=0)
+        alm_sn = np.stack(alm_sn, axis=0)
 
-        return kg, sn_samples, alm_kg, alm_sn_samples
+        return kg, sn_samples, alm_kg, alm_sn
 
     return lensing_transform
 
