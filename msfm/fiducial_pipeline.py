@@ -253,8 +253,8 @@ class FiducialPipeline(MSFMpipeline):
                 noise_indices,
                 # dimensions
                 self.n_dv_pix,
-                self.n_z_metacal,
-                self.n_z_maglim,
+                self.n_z_WL,
+                self.n_z_GC,
                 self.n_noise,
                 self.n_cls,
                 self.n_z_cross,
@@ -428,11 +428,11 @@ class FiducialPipeline(MSFMpipeline):
 
         Args:
             data_vectors (dict): Has keys "kg_{pert_label}" and "sn", which contain tensors of shape
-                (batch_size, n_pix, n_z_metacal).
+                (batch_size, n_pix, n_z_WL)GC.
 
         Returns:
-            tf.tensor: data_vectors of shape (n_perts * batch_size, n_pix, n_z_metacal). The first batch_size elements
-                correspond to the fiducial value, the second to the first perturbation, the third to the second
+            tf.tensor: data_vectors of shape (n_perts * batch_size, n_pix, n_z_WL). The first batch_size elements
+                correspond to the fiducial value, the second to the first pertuGCd
                 perturbation, etc. (for compatibility with the delta loss).
         """
         LOGGER.warning(f"Tracing _lensing_augmentations")
@@ -474,7 +474,7 @@ class FiducialPipeline(MSFMpipeline):
                 data_vector = self.normalize_lensing(data_vector)
 
             # masking
-            data_vector *= self.masks_metacal
+            data_vector *= self.GC
 
             out_data_vectors.append(data_vector)
 
