@@ -398,12 +398,12 @@ if __name__ == "__main__":
     elif args.command == 'test_pipeline':
 
         # test the onthefly_pipeline
-
+        conf = files.load_config(args.config)
         from msfm.onthefly_pipeline import OntheflyPipeline
         onthefly_pipeline = OntheflyPipeline(conf=conf)
         tfr_pattern = os.path.join(args.dir_out, "*.tfrecord")
         dset = onthefly_pipeline.get_dset(tfr_pattern=tfr_pattern, local_batch_size=2)
-        for data_vectors, cosmo, index in dset:
-            print(data_vectors.shape, cosmo, index)
+        for example in dset:
+            print(example)
             break
 

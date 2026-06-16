@@ -33,19 +33,19 @@ def get_parameters(params=None, conf=None):
         if conf["analysis"]["modelling"]["baryonified"]:
             params += conf["analysis"]["params"]["bary"]
 
-        if conf["analysis"]["modelling"]["clustering"]["stochasticity"]:
+        if conf["analysis"]["modelling"]["GC"]["stochasticity"]:
             params += conf["analysis"]["params"]["stochasticity"]
 
         # latin hypercube
         params += conf["analysis"]["params"]["ia"]["nla"]
-        if conf["analysis"]["modelling"]["lensing"]["extended_nla"]:
+        if conf["analysis"]["modelling"]["WL"]["extended_nla"]:
             params += conf["analysis"]["params"]["ia"]["tatt"]
 
         params += conf["analysis"]["params"]["bg"]["linear"]
-        if conf["analysis"]["modelling"]["clustering"]["quadratic_biasing"]:
+        if conf["analysis"]["modelling"]["GC"]["quadratic_biasing"]:
             params += conf["analysis"]["params"]["bg"]["quadratic"]
         try:
-            if conf["analysis"]["modelling"]["lensing"]["source_clustering"] == "prior":
+            if conf["analysis"]["modelling"]["WL"]["source_clustering"] == "prior":
                 params += conf["analysis"]["params"]["sc"]
         except KeyError:
             pass
