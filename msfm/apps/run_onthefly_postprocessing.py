@@ -298,9 +298,7 @@ def main(indices, args):
                             }
                         # writeout to webdataset
                         file_writer.write(dict_out)
-                        for key in dict_out.keys():
-                            del(dict_out[key])
-                        del(dict_out)
+                        del_dict(dict_out)
 
                         i_signal += 1
                         LOGGER.info(f"Writing example to {wds_file} i_cosmo={i_cosmo:>5d} i_perm={i_perm:>2d}, i_patch={i_patch:>2d}, i_signal={i_signal:>8d}")
@@ -392,6 +390,13 @@ def get_postprocessed_maps(conf, full_maps_file):
         full_sky_maps["qg"].append(qg_.astype(np.float32))
 
     return full_sky_maps
+
+def del_dict(dict_):
+
+    for key in list(dict_.keys()):
+        del(dict_[key])
+    del(dict_)
+
 
 def torch_bytes(x: torch.Tensor) -> bytes:
     buffer = io.BytesIO()
