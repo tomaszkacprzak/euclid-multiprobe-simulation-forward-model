@@ -479,3 +479,20 @@ def noise_gen_in_place_numba(
         patch_lookup,
         n_noise_per_signal,
     )
+
+def kappa_to_gamma(kappa_full_sky, hp_datapath, kappa2gamma_fac, n_side):
+
+    # kappa -> gamma (full sky)
+    kappa_alm = hp.map2alm(
+        kappa_full_sky,
+        use_pixel_weights=True,
+        datapath=hp_datapath,
+    )
+
+    gamma_alm = kappa_alm * kappa2gamma_fac
+    dummy_alm = np.zeros_like(gamma_alm)
+    _, gamma1_full, gamma2_full = hp.alm2map(
+        [dummy_alm, gamma_alm, dummy_alm], nside=n_side
+    )
+
+    return gamma1_full, gamma2_full

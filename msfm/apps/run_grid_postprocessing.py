@@ -144,6 +144,12 @@ def process_precompute(tfr_file, file_writer, conf, samples, cosmo, astro_sample
     per_bin_biasing, power_law_biasing, quadratic_biasing, extended_nla, store_cross_maps, store_lensing, store_clustering = flags
     lensing_transform, clustering_transform = transforms
 
+    bsc_samples = (
+        astro_samples[:, -1]
+        if conf["analysis"]["modelling"]["WL"]["source_clustering"] == "prior"
+        else None
+    )
+
     container_data_vecs = {}
     for sample in samples:
         LOGGER.timer.start("sample")
@@ -315,7 +321,7 @@ def process_precompute(tfr_file, file_writer, conf, samples, cosmo, astro_sample
             kg, sn_samples, dg, pn_samples, cls, cosmo_sample, i_sobol, i_signal, xg, xn_samples
         ).SerializeToString()
 
-        _verify_tfrecord(
+        tfrecords.verify_tfrecord(
             serialized,
             n_noise_per_signal,
             kg,
@@ -340,9 +346,95 @@ def process_precompute(tfr_file, file_writer, conf, samples, cosmo, astro_sample
 
 
 
-def process_onthefly():
+# def process_onthefly(tfr_file, file_writer, conf, cosmo, files, indices):
 
-    pass
+#     pixel_file, noise_file, full_maps_file = files
+#     i_sobol, i_perm, n_patches, i_signal  = indices
+#     num_processed_examples = 0
+#     n_side = conf["analysis"]["n_side"]
+#     kappa2gamma_fac, gamma2kappa_fac, _ = lensing.get_kaiser_squires_factors(3 * n_side - 1)
+#     file_dir = os.path.dirname(__file__)
+#     repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
+#     hp_datapath = os.path.join(repo_dir, conf["files"]["healpy_data"])
+
+#     # lensing
+
+#     z_bins_WL = conf["survey"]["WL"]["z_bins"]
+#     z_bins_GC = conf["survey"]["GC"]["z_bins"]
+
+#     # full sky
+#     full_sky_maps = {
+#         "γg": [],
+#         "γa": [],
+#         "γd": [],
+#         "ds": [],
+#         "dg": [],
+#         "qg": []
+#     }
+
+#     for i_z, z_bin in enumerate(z_bins_WL):
+
+#         kg = postprocessing._read_full_sky_bin(conf, full_maps_file, "kg", z_bin)
+#         γg_ = lensing.kappa_to_gamma(kg, hp_datapath, kappa2gamma_fac, n_side)
+#         full_sky_maps["γg"].append(γg_)
+        
+#         ia = postprocessing._read_full_sky_bin(conf, full_maps_file, "ia", z_bin)
+#         γa_ = lensing.kappa_to_gamma(ia, hp_datapath, kappa2gamma_fac, n_side)
+#         full_sky_maps["γa"].append(γa_)
+
+#         ds_ = postprocessing._read_full_sky_bin(conf, full_maps_file, "dg", z_bin)
+#         full_sky_maps["ds"].append(ds_)
+
+#         γd_ = γa_ * ds_ # approximation
+#         full_sky_maps["γd"].append(γd_)
+
+
+#     for i_z, z_bin in enumerate(z_bins_GC):
+
+#         dg_ = postprocessing._read_full_sky_bin(conf, full_maps_file, "dg", z_bin)
+#         qg_ = (dg_**2) # approximation
+#         full_sky_maps["dg"].append(dg_)
+#         full_sky_maps["qg"].append(qg_)
+    
+#     # patches
+#     for i_patch in range(n_patches):
+
+#         patch_maps = {}
+#         for m_name in full_sky_maps.keys():
+
+#             patch_maps[m_name] = []
+#             for m in full_sky_maps[m_name]:
+#                 patch_map_ = postprocessing.full_sky_to_patch(m, conf, pixel_file, i_z, i_patch)
+#                 patch_maps[m_name].append(patch_map_[..., np.newaxis])
+#             patch_maps[m_name] = np.concatenate(patch_maps[m_name], axis=-1)
+
+#         # serialize to binary blob
+#         serialized = tfrecords.parse_forward_onthefly(
+#             **patch_maps, 
+#             cosmo = cosmo, 
+#             i_sobol = i_sobol, 
+#             i_signal = i_signal
+#         ).SerializeToString()
+
+#         # verify readout
+#         tfrecords.verify_tfrecord_onthefly(serialized, 
+#             **patch_maps, 
+#             cosmo = cosmo, 
+#             i_sobol = i_sobol, 
+#             i_signal = i_signal)
+
+#         # write to file
+#         file_writer.write(serialized)
+
+#         num_processed_examples += 1
+#         i_signal += 1
+#         LOGGER.debug(f"Writing example to {tfr_file} i_perm={i_perm:04d}, i_patch={i_patch:04d}, i_signal={i_signal:04d} {cosmo}")
+#         for key in patch_maps.keys():
+#             LOGGER.debug(f"{key}.shape={patch_maps[key].shape}, dtype={patch_maps[key].dtype}")
+
+#     LOGGER.info(f"Done with permutation {i_perm:04d} time taken {LOGGER.timer.elapsed('permutation')}")
+
+                    
 
 
 
@@ -473,12 +565,6 @@ def main(indices, args):
 
                 i_sobol, cosmo = prior.extend_sobol_sequence(conf, cosmo_params_info, i_cosmo)
                 astro_samples = prior.sample_astro_parameters(astro_params, i_cosmo, n_examples_per_cosmo, n_noise_per_signal, astro_priors)
-
-                bsc_samples = (
-                    astro_samples[:, -1]
-                    if conf["analysis"]["modelling"]["WL"]["source_clustering"] == "prior"
-                    else None
-                )
                 i_sobol = int(cosmo_dir_in[-7:-1])
                 n_patches = conf["analysis"]["n_patches"]
                 n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
@@ -510,21 +596,27 @@ def main(indices, args):
 
                     # Split workflows here
 
-                    if conf["analysis"]["workflow_scheme"] == "precompute":
-                        num_processed_examples += process_precompute(tfr_file, file_writer, conf, samples, cosmo, astro_samples, rng_perm
-                                                                        files = (pixel_file, noise_file, full_maps_file), 
-                                                                        indices = (i_sobol, i_perm, n_patches, n_noise_per_signal), 
-                                                                        flags = (per_bin_biasing, power_law_biasing, quadratic_biasing, extended_nla, store_cross_maps, store_lensing, store_clustering), 
-                                                                        transforms = (lensing_transform, clustering_transform),
-                                                                        )
-                    elif conf["analysis"]["workflow_scheme"] == "onthefly":
-                        num_processed_examples += process_onthefly()
+                    assert conf["workflow_scheme"] == "precompute", "Only precompute workflow scheme is supported for precompute postprocessing"
+                    num_total_examples += process_precompute(tfr_file, file_writer, conf, samples, cosmo, astro_samples, rng_perm,
+                                                                 files = (pixel_file, noise_file, full_maps_file), 
+                                                                 indices = (i_sobol, i_perm, n_patches, n_noise_per_signal), 
+                                                                 flags = (per_bin_biasing, power_law_biasing, quadratic_biasing, extended_nla, store_cross_maps, store_lensing, store_clustering), 
+                                                                 transforms = (lensing_transform, clustering_transform),
+                                                                 )
+
+                    elif conf["workflow_scheme"] == "onthefly":
+                        i_signal = i_cosmo * n_perms_per_cosmo
+                        num_total_examples += process_onthefly(tfr_file, file_writer, conf, cosmo,
+                                                               files = (pixel_file, noise_file, full_maps_file), 
+                                                               indices = (i_sobol, i_perm, n_patches, i_signal), 
+                                                               )
+
                     else:
                         raise ValueError(f"Invalid workflow scheme: {conf['analysis']['workflow_scheme']}")
 
 
-
         LOGGER.info(f"Done with index {index} after {LOGGER.timer.elapsed('index')}")
+        return num_total_examples
         
 
 
@@ -716,55 +808,6 @@ def _get_clustering_transform(conf, pixel_file):
 
 
 
-def _verify_tfrecord(
-    serialized,
-    n_noise_per_signal,
-    kg,
-    sn_samples,
-    dg,
-    pn_samples,
-    cosmo,
-    i_sobol,
-    i_signal,
-    cls,
-    xg=None,
-    xn_samples=None,
-):
-    with_cross_probe = xg is not None and xn_samples is not None
-    with_lensing = kg is not None and sn_samples is not None
-    with_clustering = dg is not None and pn_samples is not None
-
-    inv_tfr = tfrecords.parse_inverse_grid(
-        serialized,
-        range(n_noise_per_signal),
-        with_lensing=with_lensing,
-        with_clustering=with_clustering,
-        with_cross=with_cross_probe,
-        return_cls=cls is not None,
-    )
-
-    for i_noise in range(n_noise_per_signal):
-        if with_lensing:
-            assert np.allclose(inv_tfr[f"kg_{i_noise}"], kg + sn_samples[i_noise])
-        if with_clustering:
-            assert np.allclose(inv_tfr[f"dg_{i_noise}"], dg + pn_samples[i_noise])
-        if cls is not None:
-            assert np.allclose(inv_tfr[f"cl_{i_noise}"], cls[i_noise])
-        if with_cross_probe:
-            assert np.allclose(inv_tfr[f"xg_{i_noise}"], xg + xn_samples[i_noise])
-    assert np.allclose(inv_tfr["cosmo"], cosmo)
-    assert np.allclose(inv_tfr["i_sobol"], i_sobol)
-    assert np.allclose(inv_tfr["i_signal"], i_signal)
-    LOGGER.debug("Decoded the map part of the .tfrecord successfully")
-
-    if cls is not None:
-        inv_cls = tfrecords.parse_inverse_grid_cls(serialized)
-
-        assert np.allclose(inv_cls["cls"], cls)
-        assert np.allclose(inv_cls["cosmo"], cosmo)
-        assert np.allclose(inv_cls["i_sobol"], i_sobol)
-        assert np.allclose(inv_cls["i_signal"], i_signal)
-        LOGGER.debug("Decoded the cls part of the .tfrecord successfully")
 
 
 def merge(indices, args):

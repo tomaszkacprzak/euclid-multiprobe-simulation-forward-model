@@ -15,6 +15,7 @@ https://towardsdatascience.com/a-practical-guide-to-tfrecords-584536bc786c
 
 import warnings
 import tensorflow as tf
+import numpy as np
 
 from msfm.utils import logger, cross_statistics
 
@@ -22,6 +23,7 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
+
 
 
 def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal, xg=None, xn_realz=None):
@@ -651,3 +653,360 @@ def _float_feature(value):
 def _int64_feature(value):
     """Returns an int64_list from a bool / enum / int / uint."""
     return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
+
+
+## verification ########################################################################################################
+
+def verify_tfrecord(
+    serialized,
+    n_noise_per_signal,
+    kg,
+    sn_samples,
+    dg,
+    pn_samples,
+    cosmo,
+    i_sobol,
+    i_signal,
+    cls,
+    xg=None,
+    xn_samples=None,
+):
+    with_cross_probe = xg is not None and xn_samples is not None
+    with_lensing = kg is not None and sn_samples is not None
+    with_clustering = dg is not None and pn_samples is not None
+
+    inv_tfr = parse_inverse_grid(
+        serialized,
+        range(n_noise_per_signal),
+        with_lensing=with_lensing,
+        with_clustering=with_clustering,
+        with_cross=with_cross_probe,
+        return_cls=cls is not None,
+    )
+
+    for i_noise in range(n_noise_per_signal):
+        if with_lensing:
+            assert np.allclose(inv_tfr[f"kg_{i_noise}"], kg + sn_samples[i_noise])
+        if with_clustering:
+            assert np.allclose(inv_tfr[f"dg_{i_noise}"], dg + pn_samples[i_noise])
+        if cls is not None:
+            assert np.allclose(inv_tfr[f"cl_{i_noise}"], cls[i_noise])
+        if with_cross_probe:
+            assert np.allclose(inv_tfr[f"xg_{i_noise}"], xg + xn_samples[i_noise])
+    assert np.allclose(inv_tfr["cosmo"], cosmo)
+    assert np.allclose(inv_tfr["i_sobol"], i_sobol)
+    assert np.allclose(inv_tfr["i_signal"], i_signal)
+    LOGGER.debug("Decoded the map part of the .tfrecord successfully")
+
+    if cls is not None:
+        inv_cls = parse_inverse_grid_cls(serialized)
+
+        assert np.allclose(inv_cls["cls"], cls)
+        assert np.allclose(inv_cls["cosmo"], cosmo)
+        assert np.allclose(inv_cls["i_sobol"], i_sobol)
+        assert np.allclose(inv_cls["i_signal"], i_signal)
+        LOGGER.debug("Decoded the cls part of the .tfrecord successfully")
+
+
+## onthefly ############################################################################################################
+
+
+def parse_forward_onthefly(γg, γa, γd, ds, dg, qg, cosmo, i_sobol, i_signal):
+    """The grid cosmologies contain all of the maps and labels.
+
+    Args:
+        γg (np.ndarray): shape(n_pix, n_z_WL), lensing shear map.
+        γa (np.ndarray): shape(n_pix, n_z_WL), linear IA map.
+        γd (np.ndarray): shape(n_pix, n_z_WL), delta-NLA IA map.
+        ds (np.ndarray): shape(n_pix, n_z_WL), delta of source galaxies.
+        dg (np.ndarray): shape(n_pix, n_z_GC), linear galaxy counts.
+        qg (np.ndarray): shape(n_pix, n_z_GC), quadratic galaxy counts.
+        cosmo (np.ndarray): shape(n_params) to be used as a label.
+        i_sobol (int): Seed within the Sobol sequence.
+        i_signal (int): Example index, which is determined by the simulation run and the patch.
+
+    Returns:
+        tf.train.Example: Example containing all of these tensors.
+    """
+    # LOGGER.warning(f"Tracing parse_forward_grid")
+
+    features = {
+        # labels
+        "cosmo": _bytes_feature(tf.io.serialize_tensor(cosmo)),
+        "n_params": _int64_feature(cosmo.shape[0]),
+        "i_sobol": _int64_feature(i_sobol),
+        "i_signal": _int64_feature(i_signal),
+
+        "n_pix": _int64_feature(γg.shape[0]),
+        "n_z_WL": _int64_feature(γg.shape[1]),
+        "n_z_GC": _int64_feature(dg.shape[1]),
+
+        "γg": _bytes_feature(tf.io.serialize_tensor(γg)),
+        "γa": _bytes_feature(tf.io.serialize_tensor(γa)),
+        "γd": _bytes_feature(tf.io.serialize_tensor(γd)),
+        "ds": _bytes_feature(tf.io.serialize_tensor(ds)),
+        "dg": _bytes_feature(tf.io.serialize_tensor(dg)),
+        "qg": _bytes_feature(tf.io.serialize_tensor(qg)),
+    }
+    
+    # create an Example, wrapping the single features
+    example = tf.train.Example(features=tf.train.Features(feature=features))
+
+    return example
+
+
+import numpy as np
+import tensorflow as tf
+
+
+# Defaults used when parsing from a tf.data pipeline.
+# These MUST match the dtype used when writing with tf.io.serialize_tensor.
+# If your arrays are float64, change these defaults to tf.float64,
+# or pass tensor_dtypes explicitly as shown in verify_tfrecord_onthefly.
+_DEFAULT_TENSOR_DTYPES = {
+    "cosmo": tf.float32,
+    "γg": tf.complex64,
+    "γa": tf.complex64,
+    "γd": tf.complex64,
+    "ds": tf.float32,
+    "dg": tf.float32,
+    "qg": tf.float32,
+}
+
+
+def parse_inverse_onthefly(serialized_example, tensor_dtypes=None):
+    """Parse one serialized TFRecord example written by parse_forward_onthefly.
+
+    Args:
+        serialized_example: A scalar string Tensor or raw serialized Example bytes.
+        tensor_dtypes: Optional dict mapping tensor field names to TensorFlow dtypes.
+            This is useful because tf.io.parse_tensor needs the dtype explicitly.
+            Example:
+                {
+                    "cosmo": tf.float64,
+                    "γg": tf.float32,
+                    ...
+                }
+
+    Returns:
+        dict: Parsed tensors and integer metadata.
+    """
+    dtypes = dict(_DEFAULT_TENSOR_DTYPES)
+    if tensor_dtypes is not None:
+        dtypes.update({k: tf.as_dtype(v) for k, v in tensor_dtypes.items()})
+
+    feature_description = {
+        # labels / metadata
+        "cosmo": tf.io.FixedLenFeature([], tf.string),
+        "n_params": tf.io.FixedLenFeature([], tf.int64),
+        "i_sobol": tf.io.FixedLenFeature([], tf.int64),
+        "i_signal": tf.io.FixedLenFeature([], tf.int64),
+
+        "n_pix": tf.io.FixedLenFeature([], tf.int64),
+        "n_z_WL": tf.io.FixedLenFeature([], tf.int64),
+        "n_z_GC": tf.io.FixedLenFeature([], tf.int64),
+
+        # maps
+        "γg": tf.io.FixedLenFeature([], tf.string),
+        "γa": tf.io.FixedLenFeature([], tf.string),
+        "γd": tf.io.FixedLenFeature([], tf.string),
+        "ds": tf.io.FixedLenFeature([], tf.string),
+        "dg": tf.io.FixedLenFeature([], tf.string),
+        "qg": tf.io.FixedLenFeature([], tf.string),
+    }
+
+    features = tf.io.parse_single_example(serialized_example, feature_description)
+
+    n_params = features["n_params"]
+    n_pix = features["n_pix"]
+    n_z_WL = features["n_z_WL"]
+    n_z_GC = features["n_z_GC"]
+
+    wl_shape = tf.stack([n_pix, n_z_WL])
+    gc_shape = tf.stack([n_pix, n_z_GC])
+
+    cosmo = tf.io.parse_tensor(features["cosmo"], out_type=dtypes["cosmo"])
+    γg = tf.io.parse_tensor(features["γg"], out_type=dtypes["γg"])
+    γa = tf.io.parse_tensor(features["γa"], out_type=dtypes["γa"])
+    γd = tf.io.parse_tensor(features["γd"], out_type=dtypes["γd"])
+    ds = tf.io.parse_tensor(features["ds"], out_type=dtypes["ds"])
+    dg = tf.io.parse_tensor(features["dg"], out_type=dtypes["dg"])
+    qg = tf.io.parse_tensor(features["qg"], out_type=dtypes["qg"])
+
+    # Restore expected shapes using the stored metadata.
+    cosmo = tf.reshape(cosmo, tf.stack([n_params]))
+
+    γg = tf.reshape(γg, wl_shape)
+    γa = tf.reshape(γa, wl_shape)
+    γd = tf.reshape(γd, wl_shape)
+    ds = tf.reshape(ds, wl_shape)
+
+    dg = tf.reshape(dg, gc_shape)
+    qg = tf.reshape(qg, gc_shape)
+
+    # Give TensorFlow static rank information, useful in tf.data pipelines.
+    cosmo.set_shape([None])
+    for x in (γg, γa, γd, ds, dg, qg):
+        x.set_shape([None, None])
+
+    return {
+        "cosmo": cosmo,
+        "n_params": n_params,
+        "i_sobol": features["i_sobol"],
+        "i_signal": features["i_signal"],
+        "n_pix": n_pix,
+        "n_z_WL": n_z_WL,
+        "n_z_GC": n_z_GC,
+        "γg": γg,
+        "γa": γa,
+        "γd": γd,
+        "ds": ds,
+        "dg": dg,
+        "qg": qg,
+    }
+
+
+def verify_tfrecord_onthefly(
+    serialized_example,
+    γg,
+    γa,
+    γd,
+    ds,
+    dg,
+    qg,
+    cosmo,
+    i_sobol,
+    i_signal,
+):
+    """Verify that one serialized example round-trips correctly.
+
+    Args:
+        serialized_example: Either a serialized Example byte string,
+            a scalar tf.string Tensor, or a tf.train.Example object.
+        γg, γa, γd, ds, dg, qg, cosmo: Original arrays.
+        i_sobol, i_signal: Original integer metadata.
+
+    Returns:
+        bool: True if verification passes.
+
+    Raises:
+        AssertionError: If any metadata, shape, dtype, or value differs.
+    """
+
+    # Allow passing the tf.train.Example returned by parse_forward_onthefly directly.
+    if isinstance(serialized_example, tf.train.Example):
+        serialized_example = serialized_example.SerializeToString()
+
+    expected = {
+        "γg": np.asarray(γg),
+        "γa": np.asarray(γa),
+        "γd": np.asarray(γd),
+        "ds": np.asarray(ds),
+        "dg": np.asarray(dg),
+        "qg": np.asarray(qg),
+        "cosmo": np.asarray(cosmo),
+    }
+
+    # Basic consistency checks on the original inputs.
+    if expected["γg"].ndim != 2:
+        raise AssertionError(f"γg must be 2D, got shape {expected['γg'].shape}")
+
+    if expected["cosmo"].ndim != 1:
+        raise AssertionError(f"cosmo must be 1D, got shape {expected['cosmo'].shape}")
+
+    for key in ("γa", "γd", "ds"):
+        if expected[key].shape != expected["γg"].shape:
+            raise AssertionError(
+                f"{key} shape mismatch: got {expected[key].shape}, "
+                f"expected {expected['γg'].shape}"
+            )
+
+    if expected["qg"].shape != expected["dg"].shape:
+        raise AssertionError(
+            f"qg shape mismatch: got {expected['qg'].shape}, "
+            f"expected {expected['dg'].shape}"
+        )
+
+    if expected["dg"].shape[0] != expected["γg"].shape[0]:
+        raise AssertionError(
+            f"dg and γg must have the same n_pix: "
+            f"dg has {expected['dg'].shape[0]}, γg has {expected['γg'].shape[0]}"
+        )
+
+    # Infer the exact dtypes from the originals for verification.
+    # This avoids failing when your stored arrays are float64 instead of float32.
+    tensor_dtypes = {
+        key: tf.as_dtype(arr.dtype)
+        for key, arr in expected.items()
+    }
+
+    parsed = parse_inverse_onthefly(
+        serialized_example,
+        tensor_dtypes=tensor_dtypes,
+    )
+
+    def _to_numpy(x):
+        if isinstance(x, np.ndarray):
+            return x
+        if tf.is_tensor(x):
+            return x.numpy()
+        return np.asarray(x)
+
+    def _to_int(x):
+        if tf.is_tensor(x):
+            return int(x.numpy())
+        return int(x)
+
+    expected_n_pix = expected["γg"].shape[0]
+    expected_n_z_WL = expected["γg"].shape[1]
+    expected_n_z_GC = expected["dg"].shape[1]
+    expected_n_params = expected["cosmo"].shape[0]
+
+    metadata_checks = {
+        "n_pix": expected_n_pix,
+        "n_z_WL": expected_n_z_WL,
+        "n_z_GC": expected_n_z_GC,
+        "n_params": expected_n_params,
+        "i_sobol": int(i_sobol),
+        "i_signal": int(i_signal),
+    }
+
+    for key, expected_value in metadata_checks.items():
+        got_value = _to_int(parsed[key])
+        if got_value != expected_value:
+            raise AssertionError(
+                f"{key} mismatch: got {got_value}, expected {expected_value}"
+            )
+
+    for key, expected_array in expected.items():
+        got_array = _to_numpy(parsed[key])
+
+        if got_array.shape != expected_array.shape:
+            raise AssertionError(
+                f"{key} shape mismatch: got {got_array.shape}, "
+                f"expected {expected_array.shape}"
+            )
+
+        if got_array.dtype != expected_array.dtype:
+            raise AssertionError(
+                f"{key} dtype mismatch: got {got_array.dtype}, "
+                f"expected {expected_array.dtype}"
+            )
+
+        if np.issubdtype(expected_array.dtype, np.inexact):
+            np.testing.assert_allclose(
+                got_array,
+                expected_array,
+                rtol=0.0,
+                atol=0.0,
+                equal_nan=True,
+                err_msg=f"{key} values differ",
+            )
+        else:
+            np.testing.assert_array_equal(
+                got_array,
+                expected_array,
+                err_msg=f"{key} values differ",
+            )
+
+    return True
