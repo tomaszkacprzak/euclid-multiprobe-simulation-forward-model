@@ -162,126 +162,6 @@ def _set_up_per_example_dv_container(conf, pixel_file, is_fiducial):
 
     return data_vec_container
 
-
-# grid ################################################################################################################
-
-
-# def postprocess_grid_permutations(args, conf, cosmo_dir_in, pixel_file, noise_file, bsc_samples=None):
-#     # hard-coded with respect to the filenames
-#     i_sobol = int(cosmo_dir_in[-7:-1])
-#     n_patches = conf["analysis"]["n_patches"]
-#     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
-#     rng = np.random.default_rng()
-
-#     store_lensing = conf["analysis"]["modelling"]["WL"]["store"]
-#     store_clustering = conf["analysis"]["modelling"]["GC"]["store"]
-#     samples = []
-#     if store_lensing:
-#         samples.append("WL")
-#     if store_clustering:
-#         samples.append("GC")
-
-#     # output container, one for each cosmology
-#     data_vec_container = _set_up_per_cosmo_dv_container(conf, pixel_file)
-#     for i_perm in LOGGER.progressbar(range(n_perms_per_cosmo), desc="Looping through permutations\n", at_level="info"):
-#         LOGGER.info(f"Starting simulation permutation {i_perm:04d}")
-
-#         if args.debug and i_perm > 3:
-#             LOGGER.warning("Debug mode, aborting after 3 permutations")
-#             break
-
-#         full_maps_file = _get_full_sky_perm(args, conf, cosmo_dir_in, i_perm)
-
-#         for sample in samples:
-#             LOGGER.timer.start("sample")
-#             LOGGER.info(f"Starting with sample {sample}")
-
-#             # sample specific
-#             in_map_types = conf["survey"][sample]["map_types"]["input"]
-#             out_map_types = conf["survey"][sample]["map_types"]["output"]
-#             z_bins = conf["survey"][sample]["z_bins"]
-
-#             for in_map_type, out_map_type in zip(in_map_types, out_map_types):
-#                 LOGGER.info(f"Starting with map type {in_map_type} -> {out_map_type}")
-#                 LOGGER.timer.start("map_type")
-
-#                 for i_z, z_bin in enumerate(z_bins):
-#                     full_sky_bin = _read_full_sky_bin(conf, full_maps_file, in_map_type, z_bin)
-
-#                     if sample == "WL":
-#                         data_vecs = postprocess_wl_bin(
-#                             conf,
-#                             full_sky_bin,
-#                             in_map_type,
-#                             out_map_type,
-#                             i_z,
-#                             "grid",
-#                             pixel_file,
-#                             noise_file,
-#                             full_maps_file,
-#                             bgs_key=f"cosmo_{i_sobol:06d}",
-#                             i_perm=i_perm,
-#                             bsc_samples=bsc_samples,
-#                         )
-#                     elif sample == "GC":
-#                         data_vecs = postprocess_gc_bin(
-#                             conf,
-#                             full_sky_bin,
-#                             in_map_type,
-#                             out_map_type,
-#                             i_z,
-#                             "grid",
-#                             pixel_file,
-#                             i_sobol=i_sobol,
-#                             rng=rng,
-#                         )
-
-#                     # collect the different permutations along the first axis
-#                     data_vec_container[out_map_type][
-#                         n_patches * i_perm : n_patches * (i_perm + 1), ..., i_z
-#                     ] = data_vecs
-
-#                 LOGGER.info(f"Done with map type {out_map_type} after {LOGGER.timer.elapsed('map_type')}")
-#             LOGGER.info(f"Done with sample {sample} after {LOGGER.timer.elapsed('sample')}")
-
-#     return data_vec_container
-
-
-# def _set_up_per_cosmo_dv_container(conf, pixel_file):
-#     n_patches = conf["analysis"]["n_patches"]
-#     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
-#     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
-#     data_vec_len = len(pixel_file[0])
-
-#     store_lensing = conf["analysis"]["modelling"]["WL"]["store"]
-#     store_clustering = conf["analysis"]["modelling"]["GC"]["store"]
-
-#     out_map_types = []
-#     if store_lensing:
-#         out_map_types += conf["survey"]["WL"]["map_types"]["output"]
-#     if store_clustering:
-#         out_map_types += conf["survey"]["GC"]["map_types"]["output"]
-
-#     data_vec_container = {}
-#     for out_map_type in out_map_types:
-#         if out_map_type in ["kg", "ia", "ds"]:
-#             n_z_bins = len(conf["survey"]["WL"]["z_bins"])
-#             dvs_shape = (n_perms_per_cosmo * n_patches, data_vec_len, n_z_bins)
-#         elif out_map_type == "dg":
-#             n_z_bins = len(conf["survey"]["GC"]["z_bins"])
-#             dvs_shape = (n_perms_per_cosmo * n_patches, data_vec_len, n_z_bins)
-#         elif out_map_type == "sn":
-#             n_z_bins = len(conf["survey"]["WL"]["z_bins"])
-#             dvs_shape = (n_perms_per_cosmo * n_patches, n_noise_per_signal, data_vec_len, n_z_bins)
-
-#         data_vec_container[out_map_type] = np.zeros(dvs_shape, dtype=np.float32)
-
-#     return data_vec_container
-
-
-# lensing #############################################################################################################
-
-
 def postprocess_wl_bin(
     conf,
     full_sky_map,
@@ -299,10 +179,15 @@ def postprocess_wl_bin(
 ):
     if in_map_type in ["kg", "ia"]:
         # shape (n_patches, data_vec_len)
-        kappa_dvs = postprocess_lensing(full_sky_map, conf, pixel_file, i_z)
+        lensing_dvs = postprocess_lensing(full_sky_map, conf, pixel_file, i_z)
+    elif in_map_type == "kg" and out_map_type == "γg":
+
+        pass
+        # TODO
+
     elif in_map_type == "dg" and out_map_type == "sn":
         # shape (n_patches, n_noise_per_signal, data_vec_len)
-        kappa_dvs = postprocess_shape_noise(
+        lensing_dvs = postprocess_shape_noise(
             full_sky_map, conf, simset, pixel_file, noise_file, i_z, bgs_key, i_perm, bsc_samples, rng,
         )
     elif in_map_type == "dg" and out_map_type == "ds":
@@ -310,16 +195,59 @@ def postprocess_wl_bin(
         convert_to_contrast(full_sky_map)
         convert_to_zero_mean(full_sky_ia)
         full_sky_ds = full_sky_ia * full_sky_map
-        # full_sky_ds = (full_sky_ia - np.mean(full_sky_ia)) * (
-        #     (full_sky_map - np.mean(full_sky_map)) / np.mean(full_sky_map)
-        # )
         # shape (n_patches, data_vec_len)
-        kappa_dvs = postprocess_lensing(full_sky_ds, conf, pixel_file, i_z)
+        lensing_dvs = postprocess_lensing(full_sky_ds, conf, pixel_file, i_z)
     else:
         raise ValueError(f"Unknown input map type {in_map_type} for weak lensing")
 
-    return kappa_dvs
+    return lensing_dvs
 
+
+
+def postprocess_shear(kappa_full_sky, conf, pixel_file, i_z):
+    n_side = conf["analysis"]["n_side"]
+    n_pix = hp.nside2npix(n_side)
+    n_patches = conf["analysis"]["n_patches"]
+
+    # pixel file
+    data_vec_pix, patches_pix_dict, corresponding_pix_dict, gamma2_signs = pixel_file
+    patches_pix = patches_pix_dict["WL"][i_z]
+    corresponding_pix = corresponding_pix_dict["WL"][i_z]
+    data_vec_len = len(data_vec_pix)
+    base_patch_pix = patches_pix[0]
+
+    file_dir = os.path.dirname(__file__)
+    repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
+    hp_datapath = os.path.join(repo_dir, conf["files"]["healpy_data"])
+
+    # kappa -> gamma (full sky)
+    kappa2gamma_fac, gamma2kappa_fac, _ = lensing.get_kaiser_squires_factors(3 * n_side - 1)
+    gamma1_full, gamma2_full = lensing.kappa_to_gamma(kappa_full_sky, hp_datapath, kappa2gamma_fac, n_side)
+
+    shear_dvs = np.zeros((n_patches, data_vec_len), dtype=np.complex64)
+    gamma_patch = np.zeros(n_pix, dtype=np.complex64)
+    for i_patch, patch_pix in enumerate(patches_pix):
+        # The 90° rots do NOT change the shear, however, the mirroring does,
+        # therefore we have to swap sign of gamma2 for the last 2 patches!
+        gamma2_sign = gamma2_signs[i_patch]
+        LOGGER.debug(f"Using gamma2 sign {gamma2_sign} for patch index {i_patch}")
+
+        gamma_patch[:] = 0
+        gamma_patch[base_patch_pix] = gamma1_full[patch_pix] + 1j * gamma2_sign * gamma2_full[patch_pix]
+
+        # cut out padded data vector
+        shear_dv = maps.map_to_data_vec(
+            hp_map=gamma_patch,
+            data_vec_len=data_vec_len,
+            corresponding_pix=corresponding_pix,
+            cutout_pix=base_patch_pix,
+            remove_mean=True,
+        )
+
+        shear_dvs[i_patch] = shear_dv
+
+    # shape (n_patches, data_vec_len)
+    return shear_dvs
 
 def postprocess_lensing(kappa_full_sky, conf, pixel_file, i_z):
     n_side = conf["analysis"]["n_side"]
@@ -340,17 +268,20 @@ def postprocess_lensing(kappa_full_sky, conf, pixel_file, i_z):
     hp_datapath = os.path.join(repo_dir, conf["files"]["healpy_data"])
 
     # kappa -> gamma (full sky)
-    kappa_alm = hp.map2alm(
-        kappa_full_sky,
-        use_pixel_weights=True,
-        datapath=hp_datapath,
-    )
+    gamma1_full, gamma2_full = lensing.kappa_to_gamma(kappa_full_sky, hp_datapath, kappa2gamma_fac, n_side)
+    # kappa_alm = hp.map2alm(
+    #     kappa_full_sky,
+    #     use_pixel_weights=True,
+    #     datapath=hp_datapath,
+    # )
 
-    gamma_alm = kappa_alm * kappa2gamma_fac
-    dummy_alm = np.zeros_like(gamma_alm)
-    _, gamma1_full, gamma2_full = hp.alm2map(
-        [dummy_alm, gamma_alm, dummy_alm], nside=n_side
-    )
+    # gamma_alm = kappa_alm * kappa2gamma_fac
+    # dummy_alm = np.zeros_like(gamma_alm)
+    # _, gamma1_full, gamma2_full = hp.alm2map(
+    #     [dummy_alm, gamma_alm, dummy_alm], nside=n_side
+    # )
+
+    # gamma1_full, gamma2_full = lensing.kappa_to_gamma(kappa_full_sky, hp_datapath, kappa2gamma_fac)
 
     kappa_dvs = np.zeros((n_patches, data_vec_len), dtype=np.float32)
     gamma1_patch = np.zeros(n_pix, dtype=np.float32)

@@ -271,58 +271,12 @@ def main(indices, args):
                     else None
                 )
 
-
-                # if args.debug and os.path.exists(state_file):
-                #     with open(state_file, "rb") as f:
-                #         state = pickle.load(f)
-                #         data_vec_container = state["data_vec_container"]
-                #     LOGGER.warning(f"Debug mode, reading the state from {state_file}")
-                # else:
-                #     # cut out the survey footprints, generate the shape noise, perform mode removal, ...
-                #     data_vec_container = postprocessing.postprocess_grid_permutations(
-                #         args, conf, cosmo_dir_in, pixel_file, noise_file, bsc_samples=bsc_samples
-                #     )
-
-                #     if args.debug:
-                #         state = {"data_vec_container": data_vec_container}
-                #         with open(state_file, "wb") as f:
-                #             LOGGER.warning(f"Debug mode, writing the state to {state_file}")
-                #             pickle.dump(state, f)
-
-                # # (n_examples_per_cosmo, n_pix, n_z_bins)
-                # kg_examples = data_vec_container["kg"] if store_lensing else [None] * n_examples_per_cosmo
-                # ia_examples = data_vec_container["ia"] if store_lensing else [None] * n_examples_per_cosmo
-                # ds_examples = (
-                #     data_vec_container["ds"] if store_lensing and extended_nla else [None] * n_examples_per_cosmo
-                # )
-
-                # dg_examples = data_vec_container["dg"] if store_clustering else [None] * n_examples_per_cosmo
-                # # qdg_examples = data_vec_container["dg2"] if quadratic_biasing else [None] * n_examples_per_cosmo
-                # # NOTE this is the naive quadratic bias map from DeepLSS
-                # qdg_examples = (
-                #     np.square(dg_examples) * np.sign(dg_examples)
-                #     if store_clustering and quadratic_biasing
-                #     else [None] * n_examples_per_cosmo
-                # )
-
-                # (n_examples_per_cosmo, n_noise_per_signaln_pix, n_z_bins)
-                # sn_examples = data_vec_container["sn"] if store_lensing else [None] * n_examples_per_cosmo
-
-                # loop over the n_examples_per_cosmo
-                # for i_signal, (kg, ia, ds, sn_samples, dg, qdg) in LOGGER.progressbar(
-                #     enumerate(zip(kg_examples, ia_examples, ds_examples, sn_examples, dg_examples, qdg_examples)),
-                #     at_level="info",
-                #     desc="Looping through the per cosmology examples",
-                #     total=n_examples_per_cosmo // n_noise_per_signal,
-                # ):
-
                 i_sobol = int(cosmo_dir_in[-7:-1])
                 n_patches = conf["analysis"]["n_patches"]
                 n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
-                # rng = np.random.default_rng()
-
                 store_lensing = conf["analysis"]["modelling"]["WL"]["store"]
                 store_clustering = conf["analysis"]["modelling"]["GC"]["store"]
+
                 samples = []
                 if store_lensing:
                     samples.append("WL")
@@ -339,10 +293,6 @@ def main(indices, args):
                     LOGGER.timer.start("permutation")
 
                     rng_perm = np.random.default_rng(int(conf['master_seed']) + i_cosmo * n_perms_per_cosmo + i_perm)
-
-                    # if args.debug and i_signal > n_patches:
-                    #     LOGGER.warning(f"Debug mode, only processing the first {n_patches} examples")
-                    #     break
                     full_maps_file = postprocessing._get_full_sky_perm(args, conf, cosmo_dir_in, i_perm)
 
                     container_data_vecs = {}
@@ -410,12 +360,12 @@ def main(indices, args):
                             LOGGER.debug(f"concat_probe_zbins: concatenating {len(xs)} z bins for probe {probe}")
                             return np.concatenate(xs, axis=-1)
 
-                    kg_examples  = concat_probe_zbins("kg")
-                    ia_examples  = concat_probe_zbins("ia")
-                    ds_examples  = concat_probe_zbins("ds")
-                    sn_examples  = concat_probe_zbins("sn")
-                    dg_examples  = concat_probe_zbins("dg")
-                    qdg_examples = concat_probe_zbins("dg2")
+                    kg_examples = concat_probe_zbins("kg")
+                    ia_examples = concat_probe_zbins("ia")
+                    ds_examples = concat_probe_zbins("ds")
+                    sn_examples = concat_probe_zbins("sn")
+                    dg_examples = concat_probe_zbins("dg")
+                    qg_examples = concat_probe_zbins("qg")
 
                     for i_patch in range(n_patches):
 
@@ -425,9 +375,9 @@ def main(indices, args):
                         kg = kg_examples[i_patch]
                         ia = ia_examples[i_patch]
                         ds = ds_examples[i_patch]
-                        sn_samples = sn_examples[i_patch]
+                        sn = sn_examples[i_patch]
                         dg = dg_examples[i_patch]
-                        qdg = qdg_examples[i_patch]
+                        qg = qg_examples[i_patch]
 
                         astro_sample = astro_samples[i_signal]
                         cosmo_sample = np.concatenate([cosmo, astro_sample])
@@ -446,35 +396,35 @@ def main(indices, args):
                         # clustering
                         if power_law_biasing:
                             if quadratic_biasing:
-                                bg, n_bg, qbg, n_qbg = astro_sample[-4:]
+                                lbg, n_lbg, qbg, n_qbg = astro_sample[-4:]
                                 tomo_qbg = redshift.get_tomo_amplitudes_according_to_config(conf, qbg, n_qbg, "gc")
                             else:
-                                bg, n_bg = astro_sample[-2:]
+                                lbg, n_lbg = astro_sample[-2:]
                                 tomo_qbg = None
-                            tomo_bg = redshift.get_tomo_amplitudes_according_to_config(conf, bg, n_bg, "gc")
+                            tomo_lbg = redshift.get_tomo_amplitudes_according_to_config(conf, lbg, n_lbg, "gc")
                         elif per_bin_biasing:
                             n_gc_bins = len(conf["survey"]["GC"]["z_bins"])
                             if quadratic_biasing:
                                 # bg1, bg2, bg3, bg4, qbg1, qbg2, qbg3, qbg4 = astro_sample[-8:]
                                 # tomo_qbg = np.array([qbg1, qbg2, qbg3, qbg4])
                                 tomo_qbg = np.array(astro_sample[-n_gc_bins:])
-                                tomo_bg = np.array(astro_sample[-2*n_gc_bins:-n_gc_bins])
+                                tomo_lbg = np.array(astro_sample[-2*n_gc_bins:-n_gc_bins])
                             else:
                                 # bg1, bg2, bg3, bg4 = astro_sample[-n_gc_bins:]
                                 # tomo_bg = np.array([bg1, bg2, bg3, bg4])    
-                                tomo_bg = np.array(astro_sample[-n_gc_bins:])
+                                tomo_lbg = np.array(astro_sample[-n_gc_bins:])
                                 tomo_qbg = None
 
                         else:
                             raise ValueError(f"Unsupported configuration of clustering bias")
 
-                        kg, sn_samples, alm_kg, alm_sn_samples = (
-                            lensing_transform(kg, ia, ds, sn_samples, Aia, n_Aia, bta, np_seed=None)
+                        kg, sn, alm_kg, alm_sn = (
+                            lensing_transform(kg, ia, ds, sn, Aia, n_Aia, bta, np_seed=None)
                             if store_lensing
                             else (None, None, None, None)
                         )
-                        dg, pn_samples, alm_dg, alm_pn_samples = (
-                            clustering_transform(dg, tomo_bg, qdg, tomo_qbg, np_seed=None)
+                        dg, pn, alm_dg, alm_pn = (
+                            clustering_transform(dg, tomo_lbg, qg, tomo_qbg, np_seed=None)
                             if store_clustering
                             else (None, None, None, None)
                         )
@@ -502,26 +452,26 @@ def main(indices, args):
                                     xg[:, ix] = hp.reorder(map_cross, r2n=True)[data_vec_pix]
 
                                     for k in range(n_noise_per_signal):
-                                        alm_cross_noise = np.sqrt(alm_sn_samples[k][:, i] * alm_pn_samples[k][:, j])
+                                        alm_cross_noise = np.sqrt(alm_sn[k][:, i] * alm_pn[k][:, j])
                                         map_cross_noise = hp.alm2map(alm_cross_noise, nside=n_side, pol=False)
                                         xn_samples[k, :, ix] = hp.reorder(map_cross_noise, r2n=True)[data_vec_pix]
 
                                     ix += 1
 
                         # power spectra
-                        cls = power_spectra.run_tfrecords_alm_to_cl(alm_kg, alm_sn_samples, alm_dg, alm_pn_samples)
+                        cls = power_spectra.run_tfrecords_alm_to_cl(alm_kg, alm_sn, alm_dg, alm_pn)
 
                         serialized = tfrecords.parse_forward_grid(
-                            kg, sn_samples, dg, pn_samples, cls, cosmo_sample, i_sobol, i_signal, xg, xn_samples
+                            kg, sn, dg, pn, cls, cosmo_sample, i_sobol, i_signal, xg, xn_samples
                         ).SerializeToString()
 
                         _verify_tfrecord(
                             serialized,
                             n_noise_per_signal,
                             kg,
-                            sn_samples,
+                            sn,
                             dg,
-                            pn_samples,
+                            pn,
                             cosmo_sample,
                             i_sobol,
                             i_signal,

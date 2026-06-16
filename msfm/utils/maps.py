@@ -121,15 +121,37 @@ def map_to_data_vec(hp_map, data_vec_len, corresponding_pix, cutout_pix, remove_
     assert not (remove_mean and divide_by_mean), "Only one of remove_mean and dividie_by_mean can be true"
 
     # within the patch, not over the full sky
-    hp_mean = np.float32(np.mean(hp_map[cutout_pix]))
-    if remove_mean:
-        hp_map = hp_map - hp_mean
-    if divide_by_mean:
-        hp_map = (hp_map - hp_mean) / hp_mean
+    if hp_map.dtype == np.float32:
 
-    data_vec = np.zeros(data_vec_len, dtype=np.float32)
+        if remove_mean or divide_by_mean:
+            hp_mean = np.float32(np.mean(hp_map[cutout_pix]))
+            if remove_mean:
+                hp_map = hp_map - hp_mean
+            if divide_by_mean:
+                hp_map = (hp_map - hp_mean) / hp_mean
+
+        data_vec = np.zeros(data_vec_len, dtype=np.float32)
+
+
+    elif hp_map.dtype == np.complex64:
+
+        hp_map_cutout = hp_map[cutout_pix]
+        hp_map1 = np.real(hp_map_cutout)
+        hp_map2 = np.imag(hp_map_cutout)
+
+        if remove_mean or divide_by_mean:
+
+            hp_mean1, hp_mean2 = np.float32(np.mean(hp_map1[cutout_pix])), np.float32(np.mean(hp_map2[cutout_pix]))
+            if remove_mean:
+                hp_map1, hp_map2 = hp_map1 - hp_mean1, hp_map2 - hp_mean2
+            if divide_by_mean:
+                hp_map1, hp_map2 = (hp_map1 - hp_mean1) / hp_mean1, (hp_map2 - hp_mean2) / hp_mean2 
+            
+            hp_map = hp_map1 + 1j*hp_map2
+
+        data_vec = np.zeros(data_vec_len, dtype=np.complex64)
+
     n_indices = corresponding_pix.shape[0]
-
     assert corresponding_pix.shape == cutout_pix.shape
 
     # assign
