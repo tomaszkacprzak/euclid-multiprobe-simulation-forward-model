@@ -18,8 +18,7 @@ Meant for
 """
 
 import numpy as np
-import tensorflow as tf
-import os, argparse, warnings, time, yaml, h5py, pickle, glob, sys, io
+import os, argparse, warnings, time, yaml, sys, io
 import webdataset
 import torch
 
@@ -34,7 +33,6 @@ from msfm.utils import (
     clustering,
     cosmogrid,
     postprocessing,
-    tfrecords,
     power_spectra,
     scales,
     redshift,
@@ -53,7 +51,7 @@ LOGGER = logger.get_logger(__file__)
 
 
 def setup(args):
-    description = "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tfrecord files"
+    description = "Postprocess the CosmoGrid projections into forward-modeled survey footprints in webdataset tar files"
     parser = argparse.ArgumentParser(description=description, add_help=True)
 
     parser.add_argument(
@@ -67,7 +65,7 @@ def setup(args):
         "--n_files",
         type=int,
         default=2500,
-        help="number of .tfrecord files to produce, this should be equal to the number of tasks in esub",
+        help="number of webdataset tar files to produce, this should be equal to the number of tasks in esub",
     )
     parser.add_argument(
         "--dir_in",
@@ -188,10 +186,10 @@ def main(indices, args):
     # modeling
     baryonified = conf["analysis"]["modelling"]["baryonified"]
 
-    # .tfrecords
+    # webdataset tar files
     n_cosmos_per_file = 1
     n_examples_per_file = n_examples_per_cosmo
-    LOGGER.info(f"The number of files implies {n_cosmos_per_file} cosmological parameters per .tfrecord file")
+    LOGGER.info(f"The number of files implies {n_cosmos_per_file} cosmological parameters per webdataset tar file")
 
     LOGGER.info(
         f"In total, there are n_examples_per_cosmo * n_cosmos_per_file = {n_examples_per_cosmo} * {n_cosmos_per_file}"
@@ -206,7 +204,7 @@ def main(indices, args):
 
     LOGGER.info(f"Starting the main loop trough indices {indices}")
 
-    # index corresponds to a .tfrecord file ###########################################################################
+    # index corresponds to a webdataset tar file ###########################################################################
     for index in indices:
         LOGGER.info(f"Starting index {index}")
         LOGGER.timer.start("index")
@@ -229,9 +227,8 @@ def main(indices, args):
         i_cosmo_end = (index + 1) * n_cosmos_per_file
         LOGGER.info(f"And includes {cosmo_dirs[i_cosmo_start : i_cosmo_end]}")
 
-
+        # initialize the webdataset tar file writer
         num_total_examples = 0
-        # with tf.io.TFRecordWriter(wds_file) as file_writer:
         with webdataset.TarWriter(wds_file, encoder=True) as file_writer:
 
             # loop over the cosmological parameters
@@ -301,6 +298,9 @@ def main(indices, args):
                             }
                         # writeout to webdataset
                         file_writer.write(dict_out)
+                        for key in dict_out.keys():
+                            del(dict_out[key])
+                        del(dict_out)
 
                         i_signal += 1
                         LOGGER.info(f"Writing example to {wds_file} i_cosmo={i_cosmo:>5d} i_perm={i_perm:>2d}, i_patch={i_patch:>2d}, i_signal={i_signal:>8d}")
