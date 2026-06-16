@@ -39,6 +39,7 @@ dependencies = [
     "copy_guardian",
     "matplotlib",
     "astropy>=6.1.0",
+    "cuHPX",
 ]
 
 [project.optional-dependencies]
@@ -79,3 +80,4 @@ python_functions = "test_*"
 
 [tool.uv.sources]
 cuHPX = { git = "https://github.com/NVlabs/cuHPX" }
+
