@@ -237,8 +237,10 @@ class OntheflyPipeline:
         except ImportError as exc:
             raise ImportError("OntheflyPipeline requires NVIDIA DALI with the PyTorch plugin installed") from exc
 
-        # WebDataset extensions are the part after the first dot in each tar member name.
-        extensions = tuple(field.split(".", 1)[1] for field in WDS_FIELDS)
+        # The writer stores members as ``<sample_key>.<field>``, for example
+        # ``000000001.gamma_g.pth``. DALI therefore needs the full field name
+        # after the first dot, not only the terminal suffix (``pth``).
+        extensions = WDS_FIELDS
         _validate_first_sample_components(paths[0], extensions)
         pth_fields = tuple(field for field in WDS_FIELDS if field.endswith(".pth"))
         int_fields = tuple(field for field in WDS_FIELDS if field.endswith((".index", ".count")))
