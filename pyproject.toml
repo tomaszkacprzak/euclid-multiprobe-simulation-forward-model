@@ -40,7 +40,7 @@ dependencies = [
     "matplotlib",
     "astropy>=6.1.0",
     "cuHPX",
-    "dalinvidia-dali-cuda130",
+    "nvidia-dali-cuda130",
 ]
 
 [project.optional-dependencies]
