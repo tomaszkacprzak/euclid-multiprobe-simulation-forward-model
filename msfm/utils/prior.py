@@ -282,9 +282,12 @@ def assess_prior_boundary(
     return results
 
 def sample_astro_parameters(astro_params, i_cosmo, n_examples_per_cosmo, n_noise_per_signal, astro_priors):
+    return sample_astro_parameters_latin_hypercube(astro_params, i_cosmo, n_examples=n_examples_per_cosmo // n_noise_per_signal, astro_priors=astro_priors)
 
+
+def sample_astro_parameters_latin_hypercube(astro_params, i_cosmo, n_examples, astro_priors):
     latin_sampler = qmc.LatinHypercube(d=len(astro_params), seed=i_cosmo)
-    unscaled_samples = latin_sampler.random(n_examples_per_cosmo // n_noise_per_signal)
+    unscaled_samples = latin_sampler.random(n_examples)
     astro_samples = qmc.scale(unscaled_samples, l_bounds=astro_priors[:, 0], u_bounds=astro_priors[:, 1])
     return astro_samples.astype(np.float32)
 
@@ -298,7 +301,7 @@ def get_hard_parameters(conf, cosmo_params_info, i_cosmo):
     cosmo = np.array(cosmo, dtype=np.float32)
     return cosmo
 
-    
+
 
 def extend_sobol_sequence(conf, cosmo_params_info, i_cosmo):
     """Extend the Sobol sequence by the stochasticity parameter if needed and verify that the Sobol sequences are

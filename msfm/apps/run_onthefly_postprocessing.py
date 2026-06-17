@@ -417,9 +417,9 @@ if __name__ == "__main__":
 
         from msfm.onthefly_pipeline import OntheflyPipeline
 
-        loader = OntheflyPipeline().get_dset(
+        loader = OntheflyPipeline().get_loader(
             webds_pattern=os.path.join(args.dir_out, "*.tar"),
-            local_batch_size=8,
+            batch_size=8,
         )
 
         for batch in loader:

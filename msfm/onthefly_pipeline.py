@@ -34,21 +34,18 @@ class OntheflyPipeline():
 
         # TODO: implement this
 
-    def get_dset(
+    def get_dataset(
         self,
         webds_pattern: str,
-        local_batch_size: int,
     ):
         """Builds the dataset from the given file name pattern and performance related parameters.
 
         Args:
             webds_pattern (str): Glob pattern of the webdataset tar files.
-            local_batch_size (int): Local batch size. 
+            batch_size (int): Local batch size. 
         Returns:
             loader (torch.utils.data.DataLoader): A data loader that yields batches of data.
         """
-        print(f"webds_pattern = {webds_pattern}")
-        print(f"local_batch_size = {local_batch_size}")
 
         list_files = sorted(glob.glob(webds_pattern))
         LOGGER.info(f"list_files = {list_files}")
@@ -74,12 +71,17 @@ class OntheflyPipeline():
             )
         )
 
+        return dataset
 
-        loader = DataLoader(
-            dataset,
-            batch_size=local_batch_size,
-            num_workers=8,
-            pin_memory=True,
-        )
+    def get_loader(
+        self,
+        webds_pattern: str,
+        batch_size: int,
+    ):
+        """Builds the data loader from the given dataset and performance related parameters.
+        """
+
+        dataset = self.get_dataset(webds_pattern)
+        loader = DataLoader(dataset, batch_size=batch_size, num_workers=8, pin_memory=True)
 
         return loader
