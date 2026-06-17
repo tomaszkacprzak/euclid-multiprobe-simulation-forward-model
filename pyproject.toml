@@ -39,8 +39,10 @@ dependencies = [
     "copy_guardian",
     "matplotlib",
     "astropy>=6.1.0",
+    "torch",
+    "webdataset",
     "cuHPX",
-    "dalinvidia-dali-cuda130",
+    "nvidia-dali-cuda130",
 ]
 
 [project.optional-dependencies]
