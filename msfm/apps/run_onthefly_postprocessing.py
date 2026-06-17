@@ -10,11 +10,15 @@ to one.
 
 For the grid, the main loop runs over the cosmologies.
 
-Meant for
- - Euler (CPU nodes, local scratch)
- - esub jobarrays
- - Read the CosmoGrid directly from the SAN
- - CosmoGridV1.1
+Field names convention:
+
+- gg: lensing shear map
+- ga: intrinsic alignment map linear
+- gd: intrinsic alignment map delta-NLA
+- ds: density contrast of source clustering
+- dg: density contrast of linear galaxy clustering
+- qg: quadratic galaxy clustering
+
 """
 
 import numpy as np
