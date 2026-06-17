@@ -282,9 +282,9 @@ def main(indices, args):
                         # build output dict to be stored
                         dict_out = {
                                 "__key__": f"{i_signal:09d}",
-                                "γg.pth": torch_bytes(torch.from_numpy(patch_maps["γg"])),
-                                "γa.pth": torch_bytes(torch.from_numpy(patch_maps["γa"])),
-                                "γd.pth": torch_bytes(torch.from_numpy(patch_maps["γd"])),
+                                "gamma_g.pth": torch_bytes(torch.from_numpy(patch_maps["γg"])),
+                                "gamma_a.pth": torch_bytes(torch.from_numpy(patch_maps["γa"])),
+                                "gamma_d.pth": torch_bytes(torch.from_numpy(patch_maps["γd"])),
                                 "ds.pth": torch_bytes(torch.from_numpy(patch_maps["ds"])),
                                 "dg.pth": torch_bytes(torch.from_numpy(patch_maps["dg"])),
                                 "qg.pth": torch_bytes(torch.from_numpy(patch_maps["qg"])),
