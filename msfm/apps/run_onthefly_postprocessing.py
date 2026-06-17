@@ -282,13 +282,13 @@ def main(indices, args):
                         # build output dict to be stored
                         dict_out = {
                                 "__key__": f"{i_signal:09d}",
-                                "γg.pth": torch_bytes(torch.from_numpy(patch_maps["γg"])),
-                                "γa.pth": torch_bytes(torch.from_numpy(patch_maps["γa"])),
-                                "γd.pth": torch_bytes(torch.from_numpy(patch_maps["γd"])),
-                                "ds.pth": torch_bytes(torch.from_numpy(patch_maps["ds"])),
-                                "dg.pth": torch_bytes(torch.from_numpy(patch_maps["dg"])),
-                                "qg.pth": torch_bytes(torch.from_numpy(patch_maps["qg"])),
-                                "cosmo.pth": torch_bytes(torch.from_numpy(cosmo)),
+                                "γg.pth": torch.from_numpy(patch_maps["γg"]),
+                                "γa.pth": torch.from_numpy(patch_maps["γa"]),
+                                "γd.pth": torch.from_numpy(patch_maps["γd"]),
+                                "ds.pth": torch.from_numpy(patch_maps["ds"]),
+                                "dg.pth": torch.from_numpy(patch_maps["dg"]),
+                                "qg.pth": torch.from_numpy(patch_maps["qg"]),
+                                "cosmo.pth": torch.from_numpy(cosmo),
                                 "i_sobol.index": int(i_sobol),
                                 "i_signal.index": int(i_signal),
                                 "n_params.count": int(cosmo.shape[0]),
@@ -398,12 +398,6 @@ def del_dict(dict_):
     del(dict_)
 
 
-def torch_bytes(x: torch.Tensor) -> bytes:
-    buffer = io.BytesIO()
-    torch.save(x, buffer)
-    return buffer.getvalue()
-
-
 if __name__ == "__main__":
 
     args = setup(sys.argv[1:])
@@ -413,17 +407,31 @@ if __name__ == "__main__":
         indices = configuration.get_indices(args.indices)
         main(indices=indices, args=args)
 
-    elif args.command == 'test_pipeline':
-
-        pass
+    elif args.command == 'test':
 
         # # test the onthefly_pipeline
 
-        # from msfm.onthefly_pipeline import OntheflyPipeline
-        # onthefly_pipeline = OntheflyPipeline(conf=conf)
-        # tfr_pattern = os.path.join(args.dir_out, "*.tfrecord")
-        # dset = onthefly_pipeline.get_dset(tfr_pattern=tfr_pattern, local_batch_size=2)
-        # for data_vectors, cosmo, index in dset:
-        #     print(data_vectors.shape, cosmo, index)
-        #     break
+        from msfm.onthefly_pipeline import OntheflyPipeline
 
+        loader = OntheflyPipeline().get_dset(
+            webds_pattern=os.path.join(args.dir_out, "*.tar"),
+            local_batch_size=8,
+            output_device="cuda:0",
+        )
+
+        for batch in loader:
+            γg, γa, γd, ds, dg, qg, cosmo, i_sobol, i_signal, n_params, n_pix, n_z_WL, n_z_GC = batch
+            print(f"γg.shape = {γg.shape}")
+            print(f"γa.shape = {γa.shape}")
+            print(f"γd.shape = {γd.shape}")
+            print(f"ds.shape = {ds.shape}")
+            print(f"dg.shape = {dg.shape}")
+            print(f"qg.shape = {qg.shape}")
+            print(f"cosmo.shape = {cosmo.shape}")
+            print(f"i_sobol.shape = {i_sobol.shape}")
+            print(f"i_signal.shape = {i_signal.shape}")
+            print(f"n_params.shape = {n_params.shape}")
+            print(f"n_pix.shape = {n_pix.shape}")
+            print(f"n_z_WL.shape = {n_z_WL.shape}")
+            print(f"n_z_GC.shape = {n_z_GC.shape}")
+            break

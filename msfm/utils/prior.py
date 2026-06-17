@@ -288,6 +288,18 @@ def sample_astro_parameters(astro_params, i_cosmo, n_examples_per_cosmo, n_noise
     astro_samples = qmc.scale(unscaled_samples, l_bounds=astro_priors[:, 0], u_bounds=astro_priors[:, 1])
     return astro_samples.astype(np.float32)
 
+def get_hard_parameters(conf, cosmo_params_info, i_cosmo):
+    """Get the hard parameters for the given cosmology"""
+    cosmo_params = conf["analysis"]["params"]["cosmo"].copy()
+    baryonified = conf["analysis"]["modelling"]["baryonified"]
+    if baryonified:
+        cosmo_params += conf["analysis"]["params"]["bary"]
+    cosmo = [cosmo_params_info[cosmo_param][i_cosmo] for cosmo_param in cosmo_params]
+    cosmo = np.array(cosmo, dtype=np.float32)
+    return cosmo
+
+    
+
 def extend_sobol_sequence(conf, cosmo_params_info, i_cosmo):
     """Extend the Sobol sequence by the stochasticity parameter if needed and verify that the Sobol sequences are
     identical (computed here vs. stored in the CosmoGrid)"""
