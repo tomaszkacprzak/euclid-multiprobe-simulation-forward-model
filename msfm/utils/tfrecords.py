@@ -16,6 +16,7 @@ https://towardsdatascience.com/a-practical-guide-to-tfrecords-584536bc786c
 import warnings
 import tensorflow as tf
 import numpy as np
+import torch
 
 from msfm.utils import logger, cross_statistics
 
@@ -848,6 +849,53 @@ def parse_inverse_onthefly(serialized_example, tensor_dtypes=None):
     cosmo.set_shape([None])
     for x in (γg, γa, γd, ds, dg, qg):
         x.set_shape([None, None])
+
+    return {
+        "cosmo": cosmo,
+        "n_params": n_params,
+        "i_sobol": features["i_sobol"],
+        "i_signal": features["i_signal"],
+        "n_pix": n_pix,
+        "n_z_WL": n_z_WL,
+        "n_z_GC": n_z_GC,
+        "γg": γg,
+        "γa": γa,
+        "γd": γd,
+        "ds": ds,
+        "dg": dg,
+        "qg": qg,
+    }
+
+_DEFAULT_TENSOR_DTYPES_TORCH = {
+    "cosmo": torch.float32,
+    "γg": torch.complex64,
+    "γa": torch.complex64,
+    "γd": torch.complex64,
+    "ds": torch.float32,
+    "dg": torch.float32,
+    "qg": torch.float32,
+}
+
+def parse_inverse_onthefly_torch(serialized_example, tensor_dtypes=None):
+    """Parse one serialized TFRecord example written by parse_forward_onthefly.
+
+    Args:
+        serialized_example: A scalar string Tensor or raw serialized Example bytes.
+        tensor_dtypes: Optional dict mapping tensor field names to TensorFlow dtypes.
+            This is useful because tf.io.parse_tensor needs the dtype explicitly.
+            Example:
+                {
+                    "cosmo": tf.float64,
+                    "γg": tf.float32,
+                    ...
+                }
+
+    Returns:
+        dict: Parsed tensors and integer metadata.
+    """
+
+    
+
 
     return {
         "cosmo": cosmo,

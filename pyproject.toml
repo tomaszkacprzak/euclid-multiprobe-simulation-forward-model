@@ -40,7 +40,8 @@ dependencies = [
     "matplotlib",
     "astropy>=6.1.0",
     "cuHPX",
-    "tfrecord[torch]",
+    "webdataset",
+    "nvidia-dali-cuda130",
 ]
 
 [project.optional-dependencies]

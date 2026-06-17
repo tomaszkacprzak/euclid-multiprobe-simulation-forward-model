@@ -48,6 +48,20 @@ def get_filename_tfrecords(out_dir, index, tag, simset, with_bary=False, return_
     return os.path.join(out_dir, file_name)
 
 
+def get_filename_webdataset(out_dir, index, tag, simset, with_bary=False, return_pattern=False):
+    if return_pattern:
+        index = "????"
+    else:
+        index = f"{index:04d}"
+
+    if with_bary:
+        file_name = f"{tag}_{simset}_dmb_{index}.tar"
+    else:
+        file_name = f"{tag}_{simset}_dmo_{index}.tar"
+
+    return os.path.join(out_dir, file_name)
+
+
 def get_filename_z_distribution(conf, data_dir, galaxy_sample_label, i_bin):
 
     if conf["survey"]["name"] == "DESy3":
