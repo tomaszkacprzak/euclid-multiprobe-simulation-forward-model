@@ -10,6 +10,8 @@ grid_pipeline.py by Arne Thomsen
 
 import glob
 import io
+import os
+import tarfile
 import warnings
 from typing import Iterable, List, Optional, Sequence, Tuple
 
@@ -24,9 +26,9 @@ LOGGER = logger.get_logger(__file__)
 
 
 WDS_FIELDS: Tuple[str, ...] = (
-    "γg.pth",
-    "γa.pth",
-    "γd.pth",
+    "gamma_g.pth",
+    "gamma_a.pth",
+    "gamma_d.pth",
     "ds.pth",
     "dg.pth",
     "qg.pth",
@@ -104,6 +106,59 @@ def _deserialize_int_batch(raw: torch.Tensor, output_device: str) -> torch.Tenso
         payload = sample.numpy().tobytes().rstrip(b"\x00")
         values.append(int(payload.decode("utf-8")))
     return torch.tensor(values, dtype=torch.int64, device=output_device)
+
+
+def _tar_member_extension(member_name: str) -> str:
+    """Return the WebDataset extension DALI uses for a tar member name."""
+
+    filename = os.path.basename(member_name)
+    return filename.split(".", 1)[1] if "." in filename else ""
+
+
+def _first_sample_extensions(path: str) -> set:
+    """Inspect the first sample in a WebDataset tar without scanning the whole shard."""
+
+    sample_key = None
+    extensions = set()
+    with tarfile.open(path) as tar:
+        for member in tar:
+            if not member.isfile():
+                continue
+            filename = os.path.basename(member.name)
+            if filename.startswith(".") or "." not in filename:
+                continue
+            key = filename.split(".", 1)[0]
+            if sample_key is None:
+                sample_key = key
+            elif key != sample_key:
+                break
+            extensions.add(_tar_member_extension(member.name))
+    return extensions
+
+
+def _validate_first_sample_components(path: str, extensions: Sequence[str]) -> None:
+    """Raise a useful error before DALI reports an underful sample."""
+
+    found_extensions = _first_sample_extensions(path)
+    expected_extensions = set(extensions)
+    missing_extensions = sorted(expected_extensions - found_extensions)
+    if not missing_extensions:
+        return
+
+    legacy_gamma_extensions = {"γg.pth", "γa.pth", "γd.pth"}
+    legacy_hint = ""
+    if legacy_gamma_extensions & found_extensions:
+        legacy_hint = (
+            " The shard appears to use legacy non-ASCII gamma component names "
+            "('γg.pth', 'γa.pth', 'γd.pth'). Regenerate it with the current "
+            "run_onthefly_postprocessing writer, which stores DALI-compatible "
+            "ASCII names ('gamma_g.pth', 'gamma_a.pth', 'gamma_d.pth')."
+        )
+
+    raise ValueError(
+        f"The first WebDataset sample in {path!r} is missing components {missing_extensions}. "
+        f"Found components are {sorted(found_extensions)}.{legacy_hint}"
+    )
 
 
 def _is_cuda_device(device: str) -> bool:
@@ -184,6 +239,7 @@ class OntheflyPipeline:
 
         # WebDataset extensions are the part after the first dot in each tar member name.
         extensions = tuple(field.split(".", 1)[1] for field in WDS_FIELDS)
+        _validate_first_sample_components(paths[0], extensions)
         pth_fields = tuple(field for field in WDS_FIELDS if field.endswith(".pth"))
         int_fields = tuple(field for field in WDS_FIELDS if field.endswith((".index", ".count")))
 
