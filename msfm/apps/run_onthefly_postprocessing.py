@@ -291,10 +291,10 @@ def main(indices, args):
                                 "cosmo.pth": torch.from_numpy(cosmo),
                                 "i_sobol.index": int(i_sobol),
                                 "i_signal.index": int(i_signal),
-                                "n_params.count": int(cosmo.shape[0]),
-                                "n_pix.count": int(patch_maps["gg"].shape[0]),
-                                "n_z_WL.count": int(patch_maps["gg"].shape[1]),
-                                "n_z_GC.count": int(patch_maps["dg"].shape[1]),
+                                "n_params.index": int(cosmo.shape[0]),
+                                "n_pix.index": int(patch_maps["gg"].shape[0]),
+                                "n_z_wl.index": int(patch_maps["gg"].shape[1]),
+                                "n_z_gc.index": int(patch_maps["dg"].shape[1]),
                             }
                         # writeout to webdataset
                         file_writer.write(dict_out)
@@ -416,7 +416,6 @@ if __name__ == "__main__":
         loader = OntheflyPipeline().get_dset(
             webds_pattern=os.path.join(args.dir_out, "*.tar"),
             local_batch_size=8,
-            output_device="cuda:0",
         )
 
         for batch in loader:
@@ -430,7 +429,7 @@ if __name__ == "__main__":
             print(f"cosmo.shape = {cosmo.shape}")
             print(f"i_sobol.shape = {i_sobol.shape}")
             print(f"i_signal.shape = {i_signal.shape}")
-            print(f"n_params.shape = {n_params.shape}")
+            print(f"n_params = {n_params}")
             print(f"n_pix.shape = {n_pix.shape}")
             print(f"n_z_WL.shape = {n_z_WL.shape}")
             print(f"n_z_GC.shape = {n_z_GC.shape}")
