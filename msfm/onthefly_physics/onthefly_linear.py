@@ -8,6 +8,8 @@ import warnings
 import numpy as np
 import healpy as hp
 import torch
+import math
+import torch.nn as nn
 from torch.utils.data import DataLoader
 
 from msfm.utils import logger
@@ -25,7 +27,7 @@ class OntheflyPhysicsModelLinear(OntheflyPipeline):
         
         self.conf = conf
         self.astro_samples = self.get_astro_params(num_samples_prior)
-        self.shape_noise = 0.3
+        self.shape_noise_std = 0.3
         self.num_gal_wl = torch.from_numpy(np.array(self.conf["survey"]["WL"]["n_gal"]))
         self.num_gal_gc = torch.from_numpy(np.array(self.conf["survey"]["GC"]["n_gal"]))
         self.pixel_area = hp.nside2pixarea(self.conf["analysis"]["n_side"], degrees=True)
@@ -88,9 +90,9 @@ class OntheflyPhysicsModelLinear(OntheflyPipeline):
         targets = torch.cat([cosmo, astro_params], dim=0)
 
         #
-        # Linear bias map for galaxy clustering
+        # Linear bias map for galaxy clustering (lenses)
         #
-        ng_bar = self.num_gal_wl * self.pixel_area
+        ng_bar = self.num_gal_gc * self.pixel_area
         ids_bg = [self.inds_astro_params[key] for key in self.conf["analysis"]["params"]["bg"]["linear"]]
         bg = astro_params[ids_bg]
 
@@ -100,7 +102,39 @@ class OntheflyPhysicsModelLinear(OntheflyPipeline):
 
         LOGGER.info(f'drawn poisson galaxy clustering map ng={ng.shape} min={ng.min():>10.3f} max={ng.max():>10.3f} mean={ng.mean():>10.3f}')
 
-        return ng, targets
+        #
+        # Linear bias map for galaxy clustering (sources)
+        #
+        ng_bar = self.num_gal_wl * self.pixel_area
+        ids_bsc = [self.inds_astro_params[key] for key in self.conf["analysis"]["params"]["sc"]]
+        bsc = astro_params[ids_bsc]
+        ns_lambda = clustering.galaxy_density_to_count(ng_bar, ds, bg=bsc, qdg=None, qbg=None, mg=None, cg=None, systematics_map=None, mask=None, backend='torch')
+        ns = torch.poisson(ns_lambda)
+
+        #
+        # Lensing g1 g2 and shape noise
+        #
+        gg_abs = torch.empty(gg.shape, dtype=torch.float32)
+        gg_ang = torch.distributions.Uniform(0, 2 * math.pi).sample(gg.shape)
+        nn.init.trunc_normal_(gg_abs, mean=0.0, std=self.shape_noise_std, a=-1.0, b=1.0)
+        gg_noise = gg_abs * torch.exp(1j * gg_ang)
+        gg_noise = gg_noise / torch.sqrt(ns)
+        gg_tot = gg + gg_noise
+        gg1_tot = gg_tot.real
+        gg2_tot = gg_tot.imag
+                    
+
+        LOGGER.info(f'drawn poisson shape noise map ns={ns.shape} min={ns.min():>10.3f} max={ns.max():>10.3f} mean={ns.mean():>10.3f}')
+
+
+        LOGGER.info(f'gg1_tot.shape = {gg1_tot.shape}, gg1_tot.dtype = {gg1_tot.dtype}')
+        LOGGER.info(f'gg2_tot.shape = {gg2_tot.shape}, gg2_tot.dtype = {gg2_tot.dtype}')
+        LOGGER.info(f'ns.shape      = {ns.shape},      ns.dtype      = {ns.dtype}')
+        LOGGER.info(f'ng.shape      = {ng.shape},      ng.dtype      = {ng.dtype}')
+
+        inputs = torch.cat([gg1_tot, gg2_tot, ns, ng], dim=-1)
+
+        return inputs, targets
 
       
 

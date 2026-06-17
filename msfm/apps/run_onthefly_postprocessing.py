@@ -426,19 +426,19 @@ if __name__ == "__main__":
 
         for batch in loader:
             gg, ga, gd, ds, dg, qg, cosmo, i_sobol, i_signal, n_params, n_pix, n_z_WL, n_z_GC = batch
-            print(f"gg.shape = {gg.shape}")
-            print(f"ga.shape = {ga.shape}")
-            print(f"gd.shape = {gd.shape}")
-            print(f"ds.shape = {ds.shape}")
-            print(f"dg.shape = {dg.shape}")
-            print(f"qg.shape = {qg.shape}")
-            print(f"cosmo.shape = {cosmo.shape}")
-            print(f"i_sobol.shape = {i_sobol.shape}")
-            print(f"i_signal.shape = {i_signal.shape}")
-            print(f"n_params = {n_params}")
-            print(f"n_pix.shape = {n_pix.shape}")
-            print(f"n_z_WL.shape = {n_z_WL.shape}")
-            print(f"n_z_GC.shape = {n_z_GC.shape}")
+            print(f"gg.shape = {gg.shape}, gg.dtype = {gg.dtype}")
+            print(f"ga.shape = {ga.shape}, ga.dtype = {ga.dtype}")
+            print(f"gd.shape = {gd.shape}, gd.dtype = {gd.dtype}")
+            print(f"ds.shape = {ds.shape}, ds.dtype = {ds.dtype}")
+            print(f"dg.shape = {dg.shape}, dg.dtype = {dg.dtype}")
+            print(f"qg.shape = {qg.shape}, qg.dtype = {qg.dtype}")
+            print(f"cosmo.shape = {cosmo.shape}, cosmo.dtype = {cosmo.dtype}")
+            print(f"i_sobol.shape = {i_sobol.shape}, i_sobol.dtype = {i_sobol.dtype}")
+            print(f"i_signal.shape = {i_signal.shape}, i_signal.dtype = {i_signal.dtype}")
+            print(f"n_params = {n_params}, n_params.dtype = {n_params.dtype}")
+            print(f"n_pix.shape = {n_pix.shape}, n_pix.dtype = {n_pix.dtype}")
+            print(f"n_z_WL.shape = {n_z_WL.shape}, n_z_WL.dtype = {n_z_WL.dtype}")
+            print(f"n_z_GC.shape = {n_z_GC.shape}, n_z_GC.dtype = {n_z_GC.dtype}")
             break
 
         LOGGER.info("Testing the onthefly_linear physics model")
@@ -459,6 +459,6 @@ if __name__ == "__main__":
 
         fname = "inputs.npy"
         np.save(fname, inputs.numpy())
-        LOGGER.info(f"Saved inputs to {fname}")
+        LOGGER.info(f"Saved inputs to {fname} size={inputs.nbytes/1024**2:.2f} MB")
 
 
