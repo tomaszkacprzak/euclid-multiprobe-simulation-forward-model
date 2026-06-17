@@ -157,7 +157,7 @@ def get_tomo_amplitudes_according_to_config_vectorized(
     conf,
     amplitude,
     exponent,
-    sample: str = "metacal",
+    sample: str = "WL",
     truncate_nz: bool = True,
     z_min_quantile: float = 0.05,
     z_max_quantile: float = 0.95,

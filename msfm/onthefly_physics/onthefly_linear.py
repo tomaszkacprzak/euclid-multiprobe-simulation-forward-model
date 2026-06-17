@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 
 from msfm.utils import logger
 from msfm.onthefly_pipeline import OntheflyPipeline
-from msfm.utils import parameters, prior, clustering
+from msfm.utils import parameters, prior, clustering, redshift, files
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
@@ -62,6 +62,10 @@ class OntheflyPhysicsModelLinear(OntheflyPipeline):
         LOGGER.info(f"All parameters: {self.all_params}")
         LOGGER.info(f"Indices of all parameters: {self.inds_all_params}")
 
+        # Redshift
+        self.tomo_z, self.tomo_nz = files.load_redshift_distributions("WL", self.conf)
+        self.z0 = self.conf["survey"]["WL"]["z0"]
+
         # Pre-generate samples from latin hypercube
         self.astro_priors = parameters.get_prior_intervals(self.astro_params, conf=self.conf)
         self.astro_samples = prior.sample_astro_parameters_latin_hypercube(
@@ -107,8 +111,8 @@ class OntheflyPhysicsModelLinear(OntheflyPipeline):
         #
         ng_bar = self.num_gal_wl * self.pixel_area
         ids_bsc = [self.inds_astro_params[key] for key in self.conf["analysis"]["params"]["sc"]]
-        bsc = astro_params[ids_bsc]
-        ns_lambda = clustering.galaxy_density_to_count(ng_bar, ds, bg=bsc, qdg=None, qbg=None, mg=None, cg=None, systematics_map=None, mask=None, backend='torch')
+        tomo_bsc = astro_params[ids_bsc]
+        ns_lambda = clustering.galaxy_density_to_count(ng_bar, ds, bg=tomo_bsc, qdg=None, qbg=None, mg=None, cg=None, systematics_map=None, mask=None, backend='torch')
         ns = torch.poisson(ns_lambda)
 
         #
@@ -119,19 +123,28 @@ class OntheflyPhysicsModelLinear(OntheflyPipeline):
         nn.init.trunc_normal_(gg_abs, mean=0.0, std=self.shape_noise_std, a=-1.0, b=1.0)
         gg_noise = gg_abs * torch.exp(1j * gg_ang)
         gg_noise = gg_noise / torch.sqrt(ns)
-        gg_tot = gg + gg_noise
+
+        #
+        # Linear intrinsic alignment
+        #
+        Aia = astro_params[self.inds_astro_params['Aia']]
+        nAia = astro_params[self.inds_astro_params['n_Aia']]
+        tomo_Aia = redshift.get_tomo_amplitudes_vectorized(Aia, nAia, self.tomo_z, self.tomo_nz, self.z0).reshape(1, -1)
+        ga = ga * torch.from_numpy(tomo_Aia)
+                           
+        # 
+        # Total shear map
+        # 
+        gg_tot = gg + ga + gg_noise 
         gg1_tot = gg_tot.real
         gg2_tot = gg_tot.imag
-                    
-
-        LOGGER.info(f'drawn poisson shape noise map ns={ns.shape} min={ns.min():>10.3f} max={ns.max():>10.3f} mean={ns.mean():>10.3f}')
-
 
         LOGGER.info(f'gg1_tot.shape = {gg1_tot.shape}, gg1_tot.dtype = {gg1_tot.dtype}')
         LOGGER.info(f'gg2_tot.shape = {gg2_tot.shape}, gg2_tot.dtype = {gg2_tot.dtype}')
         LOGGER.info(f'ns.shape      = {ns.shape},      ns.dtype      = {ns.dtype}')
         LOGGER.info(f'ng.shape      = {ng.shape},      ng.dtype      = {ng.dtype}')
 
+        # Stack probes as channels
         inputs = torch.cat([gg1_tot, gg2_tot, ns, ng], dim=-1)
 
         return inputs, targets
