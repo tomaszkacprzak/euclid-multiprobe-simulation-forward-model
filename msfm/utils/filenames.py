@@ -41,9 +41,9 @@ def get_filename_examples_name(index, tag, simset, with_bary=False, return_patte
         index = f"{index:04d}"
 
     if with_bary:
-        file_name = f"{tag}_{simset}_dmb_{index}.tfrecord"
+        file_name = f"{tag}_{simset}_dmb_{index}"
     else:
-        file_name = f"{tag}_{simset}_dmo_{index}.tfrecord"
+        file_name = f"{tag}_{simset}_dmo_{index}"
 
     return file_name
 
