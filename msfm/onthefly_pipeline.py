@@ -174,7 +174,10 @@ class OntheflyPipeline:
 
         @pipeline_def
         def _webdataset_pipeline():
-            return fn.readers.webdataset(
+            # ``readers.webdataset`` returns one DataNode per requested
+            # extension. Convert the returned list to a tuple so DALI sees
+            # multiple pipeline outputs instead of a single nested DataNode.
+            outputs = fn.readers.webdataset(
                 paths=paths,
                 ext=extensions,
                 random_shuffle=not is_eval,
@@ -185,6 +188,7 @@ class OntheflyPipeline:
                 pad_last_batch=False,
                 name="OntheflyWebDatasetReader",
             )
+            return tuple(outputs)
 
         pipe = _webdataset_pipeline(
             batch_size=local_batch_size,
