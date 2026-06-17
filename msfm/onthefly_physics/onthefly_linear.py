@@ -102,6 +102,7 @@ class OntheflyPhysicsModelLinear(OntheflyPipeline):
 
         assert dg.shape[-1] == len(bg), "The number of bias parameters must match the number of tomographic bins"
         ng_lambda = clustering.galaxy_density_to_count(ng_bar, dg, bg=bg, qdg=None, qbg=None, mg=None, cg=None, systematics_map=None, mask=None, backend='torch')
+        ng_lambda = torch.where(dg == 0, 0, ng_lambda)
         ng = torch.poisson(ng_lambda)
 
         LOGGER.info(f'drawn poisson galaxy clustering map ng={ng.shape} min={ng.min():>10.3f} max={ng.max():>10.3f} mean={ng.mean():>10.3f}')
@@ -113,6 +114,7 @@ class OntheflyPhysicsModelLinear(OntheflyPipeline):
         ids_bsc = [self.inds_astro_params[key] for key in self.conf["analysis"]["params"]["sc"]]
         tomo_bsc = astro_params[ids_bsc]
         ns_lambda = clustering.galaxy_density_to_count(ng_bar, ds, bg=tomo_bsc, qdg=None, qbg=None, mg=None, cg=None, systematics_map=None, mask=None, backend='torch')
+        ns_lambda = torch.where(ds == 0, 0, ns_lambda)
         ns = torch.poisson(ns_lambda)
 
         #
@@ -145,7 +147,7 @@ class OntheflyPhysicsModelLinear(OntheflyPipeline):
         LOGGER.info(f'ng.shape      = {ng.shape},      ng.dtype      = {ng.dtype}')
 
         # Stack probes as channels
-        inputs = torch.cat([gg1_tot, gg2_tot, ns, ng], dim=-1)
+        inputs = torch.cat([gg1_tot, gg2_tot, ns, ng, ns_lambda], dim=-1)
 
         return inputs, targets
 
