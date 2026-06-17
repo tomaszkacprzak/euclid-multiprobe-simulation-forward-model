@@ -11,7 +11,7 @@ grid_pipeline.py by Arne Thomsen
 import glob
 import io
 import warnings
-from typing import Iterable, List, Sequence, Tuple
+from typing import Iterable, List, Optional, Sequence, Tuple
 
 import torch
 
@@ -106,6 +106,12 @@ def _deserialize_int_batch(raw: torch.Tensor, output_device: str) -> torch.Tenso
     return torch.tensor(values, dtype=torch.int64, device=output_device)
 
 
+def _is_cuda_device(device: str) -> bool:
+    """Return whether a torch device string refers to CUDA."""
+
+    return torch.device(device).type == "cuda"
+
+
 class OntheflyPipeline:
     """
     Sets up a PyTorch-compatible DALI loader for the on-the-fly WebDataset files.
@@ -120,7 +126,7 @@ class OntheflyPipeline:
         local_batch_size: int,
         *,
         n_workers: int = 4,
-        device_id: int = 0,
+        device_id: Optional[int] = None,
         shard_id: int = 0,
         num_shards: int = 1,
         is_eval: bool = False,
@@ -136,7 +142,8 @@ class OntheflyPipeline:
             webds_pattern: Glob pattern of the WebDataset tar files.
             local_batch_size: Batch size returned by the loader.
             n_workers: Number of DALI worker threads.
-            device_id: GPU device id used by DALI for the pipeline scheduler.
+            device_id: DALI pipeline device id. If None, GPU 0 is used when CUDA is available and a CPU DALI
+                pipeline is used otherwise.
             shard_id: Current shard id for distributed loading.
             num_shards: Number of distributed shards.
             is_eval: If True, read deterministically without random shuffling.
@@ -160,6 +167,14 @@ class OntheflyPipeline:
             raise FileNotFoundError(f"No WebDataset tar files match pattern {webds_pattern!r}")
         if drop_last is None:
             drop_last = not is_eval
+
+        cuda_available = torch.cuda.is_available()
+        if device_id is None:
+            device_id = 0 if cuda_available else None
+        if _is_cuda_device(output_device) and not cuda_available:
+            raise RuntimeError(
+                f"output_device={output_device!r} requests CUDA, but torch.cuda.is_available() is False"
+            )
 
         try:
             from nvidia.dali import fn, pipeline_def
