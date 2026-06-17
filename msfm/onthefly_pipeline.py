@@ -23,7 +23,7 @@ LOGGER = logger.get_logger(__file__)
 
 class OntheflyPipeline():
     """
-    Sets up a tf.data.Dataset for the grid cosmologies.
+    Sets up a dataset for the onthefly cosmologies.
     """
 
     def __init__(
@@ -38,7 +38,7 @@ class OntheflyPipeline():
         webds_pattern: str,
         local_batch_size: int,
     ) -> tf.data.Dataset:
-        """Builds the tf.data.Dataset from the given file name pattern and performance related parameters.
+        """Builds the dataset from the given file name pattern and performance related parameters.
 
         Args:
             webds_pattern (str): Glob pattern of the webdataset tar files.
