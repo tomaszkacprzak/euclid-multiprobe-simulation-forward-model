@@ -200,7 +200,7 @@ def main(indices, args):
     pixel_file = files.load_pixel_file(conf)
 
     # constants
-    full_sky_samples = {"γg":'WL', "γa":'WL', "ds":'WL', "γd":'WL', "dg":'GC', "qg":'GC'}
+    full_sky_samples = {"gg":'WL', "ga":'WL', "ds":'WL', "gd":'WL', "dg":'GC', "qg":'GC'}
 
     LOGGER.info(f"Starting the main loop trough indices {indices}")
 
@@ -282,9 +282,9 @@ def main(indices, args):
                         # build output dict to be stored
                         dict_out = {
                                 "__key__": f"{i_signal:09d}",
-                                "γg.pth": torch.from_numpy(patch_maps["γg"]),
-                                "γa.pth": torch.from_numpy(patch_maps["γa"]),
-                                "γd.pth": torch.from_numpy(patch_maps["γd"]),
+                                "gg.pth": torch.from_numpy(patch_maps["gg"]),
+                                "ga.pth": torch.from_numpy(patch_maps["ga"]),
+                                "gd.pth": torch.from_numpy(patch_maps["gd"]),
                                 "ds.pth": torch.from_numpy(patch_maps["ds"]),
                                 "dg.pth": torch.from_numpy(patch_maps["dg"]),
                                 "qg.pth": torch.from_numpy(patch_maps["qg"]),
@@ -292,8 +292,8 @@ def main(indices, args):
                                 "i_sobol.index": int(i_sobol),
                                 "i_signal.index": int(i_signal),
                                 "n_params.count": int(cosmo.shape[0]),
-                                "n_pix.count": int(patch_maps["γg"].shape[0]),
-                                "n_z_WL.count": int(patch_maps["γg"].shape[1]),
+                                "n_pix.count": int(patch_maps["gg"].shape[0]),
+                                "n_z_WL.count": int(patch_maps["gg"].shape[1]),
                                 "n_z_GC.count": int(patch_maps["dg"].shape[1]),
                             }
                         # writeout to webdataset
@@ -329,7 +329,7 @@ def get_postprocessed_maps(conf, full_maps_file):
 
 
     # container
-    full_sky_maps = {"γg": [], "γa": [], "γd": [], "ds": [], "dg": [], "qg": []}
+    full_sky_maps = {"gg": [], "ga": [], "gd": [], "ds": [], "dg": [], "qg": []}
 
     # loop over lensing bins
     for i_z, z_bin in enumerate(z_bins_WL):
@@ -341,8 +341,8 @@ def get_postprocessed_maps(conf, full_maps_file):
         kg = postprocessing._read_full_sky_bin(conf, full_maps_file, "kg", z_bin)
         # kappa to shear conversion for lensing signal
         g1_, g2_ = lensing.kappa_to_gamma(kg, hp_datapath, kappa2gamma_fac, n_side)
-        γg_ = g1_ + 1j*g2_
-        full_sky_maps["γg"].append(γg_.astype(np.complex64))
+        gg_ = g1_ + 1j*g2_
+        full_sky_maps["gg"].append(gg_.astype(np.complex64))
 
         ##
         ## Linear intrinsic alignment
@@ -351,8 +351,8 @@ def get_postprocessed_maps(conf, full_maps_file):
         ia = postprocessing._read_full_sky_bin(conf, full_maps_file, "ia", z_bin)
         # kappa to shear conversion for intrinsic alignment
         g1_, g2_ = lensing.kappa_to_gamma(ia, hp_datapath, kappa2gamma_fac, n_side)
-        γa_ = g1_ + 1j*g2_
-        full_sky_maps["γa"].append(γa_.astype(np.complex64)) 
+        ga_ = g1_ + 1j*g2_
+        full_sky_maps["ga"].append(ga_.astype(np.complex64)) 
 
         ##
         ## Source sample galaxy counts
@@ -367,8 +367,8 @@ def get_postprocessed_maps(conf, full_maps_file):
         ##
 
         # delta-NLA component approximation
-        γd_ = γa_ * ds_ # approximation
-        full_sky_maps["γd"].append(γd_.astype(np.complex64))
+        gd_ = ga_ * ds_ # approximation
+        full_sky_maps["gd"].append(gd_.astype(np.complex64))
 
     # loop over clustering bins
     for i_z, z_bin in enumerate(z_bins_GC):
@@ -420,10 +420,10 @@ if __name__ == "__main__":
         )
 
         for batch in loader:
-            γg, γa, γd, ds, dg, qg, cosmo, i_sobol, i_signal, n_params, n_pix, n_z_WL, n_z_GC = batch
-            print(f"γg.shape = {γg.shape}")
-            print(f"γa.shape = {γa.shape}")
-            print(f"γd.shape = {γd.shape}")
+            gg, ga, gd, ds, dg, qg, cosmo, i_sobol, i_signal, n_params, n_pix, n_z_WL, n_z_GC = batch
+            print(f"gg.shape = {gg.shape}")
+            print(f"ga.shape = {ga.shape}")
+            print(f"gd.shape = {gd.shape}")
             print(f"ds.shape = {ds.shape}")
             print(f"dg.shape = {dg.shape}")
             print(f"qg.shape = {qg.shape}")
