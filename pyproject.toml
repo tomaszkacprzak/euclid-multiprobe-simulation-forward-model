@@ -41,6 +41,7 @@ dependencies = [
     "astropy>=6.1.0",
     "cuHPX",
     "webdataset",
+    "nvidia-dali-cuda130",
 ]
 
 [project.optional-dependencies]
