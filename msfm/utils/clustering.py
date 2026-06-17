@@ -12,6 +12,8 @@ import numpy as np
 from sobol_seq import i4_sobol
 
 from msfm.utils import files, imports, parameters
+import tensorflow as tf
+import torch
 
 hp = imports.import_healpy()
 
@@ -31,13 +33,14 @@ def galaxy_density_to_count(
     systematics_map=None,
     # format
     mask=None,
+    backend='tensorflow',
 ):
     """Transform a galaxy density to a galaxy count map, according to the constants defined in the config file.
     Negative values are clipped and the maps tranformed to conserve the total number of galaxies like in DeepLSS.
 
     Args:
         ng_bar (np.ndarray): Average number of galaxies per pixel (optionally per tomographic bin).
-        dg (Union[np.ndarray, tf.Tensor]): Galaxy density contrast map or datavector. Optionally per tomographic bin
+        dg (Union[np.ndarray, tf.Tensor, torch.Tensor]): Galaxy density contrast map or datavector. Optionally per tomographic bin
             in the last array dimension.
         bg (np.ndarray): Effective linear galaxy biasing parameter (optionally per tomographic bin).
         qdg (np.ndarray, optional): Squared galaxy density contrast map (optionally per tomographic bin).
@@ -68,14 +71,21 @@ def galaxy_density_to_count(
 
     # transform like in DeepLSS Appendix E and https://github.com/tomaszkacprzak/deep_lss/blob/3c145cf8fe04c4e5f952dca984c5ce7e163b8753/deep_lss/lss_astrophysics_model_batch.py#L609
     # this ensures that all of the values are positive, while the total number of galaxies is conserved
-    if isinstance(dg, np.ndarray):
+    if backend == 'numpy':
+        import numpy as np
         ng_clip = np.clip(ng, a_min=0, a_max=None, dtype=np.float32)
         ng = ng_clip * np.sum(ng) / np.sum(ng_clip)
-    elif isinstance(dg, tf.Tensor):
+    
+    elif backend == 'tensorflow':
         import tensorflow as tf
-
         ng_clip = tf.clip_by_value(ng, clip_value_min=0, clip_value_max=1e5)
         ng = ng_clip * tf.reduce_sum(ng) / tf.reduce_sum(ng_clip)
+    
+    elif backend == 'torch':
+        import torch
+        ng_clip = torch.clamp(ng, min=0, max=1e5)
+        ng = ng_clip * torch.sum(ng) / torch.sum(ng_clip)
+
     else:
         raise ValueError(f"Unsupported type {type(dg)} for dg")
 

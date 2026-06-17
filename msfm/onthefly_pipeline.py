@@ -27,13 +27,6 @@ class OntheflyPipeline():
     Sets up a dataset for the onthefly cosmologies.
     """
 
-    def __init__(
-        self
-    ):
-        pass
-
-        # TODO: implement this
-
     def get_dataset(
         self,
         webds_pattern: str,

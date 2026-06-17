@@ -503,53 +503,6 @@ def postprocess_shape_noise(
     # shape (n_patches, n_noise_per_signal, data_vec_len)
     return kappa_dvs
 
-# def postprocess_shear(kappa_full_sky, conf, pixel_file, i_z):
-#     n_side = conf["analysis"]["n_side"]
-#     n_pix = hp.nside2npix(n_side)
-#     n_patches = conf["analysis"]["n_patches"]
-
-#     # pixel file
-#     data_vec_pix, patches_pix_dict, corresponding_pix_dict, gamma2_signs = pixel_file
-#     patches_pix = patches_pix_dict["WL"][i_z]
-#     corresponding_pix = corresponding_pix_dict["WL"][i_z]
-#     data_vec_len = len(data_vec_pix)
-#     base_patch_pix = patches_pix[0]
-
-#     kappa2gamma_fac, gamma2kappa_fac, _ = lensing.get_kaiser_squires_factors(3 * n_side - 1)
-
-#     file_dir = os.path.dirname(__file__)
-#     repo_dir = os.path.abspath(os.path.join(file_dir, "../.."))
-#     hp_datapath = os.path.join(repo_dir, conf["files"]["healpy_data"])
-
-#     # Kappa -> Gamma (full sky)
-#     gamma1_full, gamma2_full = lensing.kappa_to_gamma(kappa_full_sky, hp_datapath, kappa2gamma_fac, n_side)
-
-#     shear_dvs = np.zeros((n_patches, data_vec_len), dtype=np.float64)
-#     gamma_patch = np.zeros(n_pix, dtype=np.float64)
-
-#     for i_patch, patch_pix in enumerate(patches_pix):
-
-#         # The 90° rots do NOT change the shear, however, the mirroring does,
-#         # therefore we have to swap sign of gamma2 for the last 2 patches!
-#         gamma2_sign = gamma2_signs[i_patch]
-#         LOGGER.debug(f"Using gamma2 sign {gamma2_sign} for patch index {i_patch}")
-
-#         gamma_patch[:] = 0
-#         gamma_patch[base_patch_pix] = gamma1_full[patch_pix] + 1j * gamma2_sign * gamma2_full[patch_pix]
-
-#         shear_dv = maps.map_to_data_vec(
-#             hp_map=gamma_patch,
-#             data_vec_len=data_vec_len,
-#             corresponding_pix=corresponding_pix,
-#             cutout_pix=base_patch_pix,
-#             remove_mean=True,
-#         )
-
-#         shear_dvs[i_patch] = shear_dv
-
-#     # shape (n_patches, data_vec_len)
-#     return shear_dvs
-
 def full_sky_to_patch(m, conf, pixel_file, i_z, i_patch, sample):
 
     n_side = conf["analysis"]["n_side"]
@@ -576,14 +529,6 @@ def full_sky_to_patch(m, conf, pixel_file, i_z, i_patch, sample):
 
     m_dv = np.zeros(data_vec_len, dtype=m_patch.dtype)
     m_dv[corresponding_pix] = m_patch[base_patch_pix]
-
-    # m_dv = maps.map_to_data_vec(
-    #     hp_map=m_patch,
-    #     data_vec_len=data_vec_len,
-    #     corresponding_pix=corresponding_pix,
-    #     cutout_pix=base_patch_pix,
-    #     remove_mean=True,
-    # )
 
     # shape (data_vec_len,)
     return m_dv

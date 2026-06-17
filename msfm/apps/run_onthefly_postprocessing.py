@@ -415,6 +415,8 @@ if __name__ == "__main__":
 
         # # test the onthefly_pipeline
 
+        LOGGER.info("Testing the onthefly_pipeline")
+
         from msfm.onthefly_pipeline import OntheflyPipeline
 
         loader = OntheflyPipeline().get_loader(
@@ -438,3 +440,25 @@ if __name__ == "__main__":
             print(f"n_z_WL.shape = {n_z_WL.shape}")
             print(f"n_z_GC.shape = {n_z_GC.shape}")
             break
+
+        LOGGER.info("Testing the onthefly_linear physics model")
+
+        from msfm.onthefly_physics.onthefly_linear import OntheflyPhysicsModelLinear
+        conf = files.load_config(args.config)
+        model = OntheflyPhysicsModelLinear(conf, num_samples_prior=1_000_000)
+        loader = model.get_loader(
+            webds_pattern=os.path.join(args.dir_out, "*.tar"), 
+            batch_size=8
+            )
+
+        for batch in loader:
+            inputs, targets  = batch
+            print(f"inputs = {inputs.shape}")
+            print(f"targets = {targets.shape}")
+            break
+
+        fname = "inputs.npy"
+        np.save(fname, inputs.numpy())
+        LOGGER.info(f"Saved inputs to {fname}")
+
+

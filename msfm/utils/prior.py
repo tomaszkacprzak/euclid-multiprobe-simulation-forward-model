@@ -282,11 +282,11 @@ def assess_prior_boundary(
     return results
 
 def sample_astro_parameters(astro_params, i_cosmo, n_examples_per_cosmo, n_noise_per_signal, astro_priors):
-    return sample_astro_parameters_latin_hypercube(astro_params, i_cosmo, n_examples=n_examples_per_cosmo // n_noise_per_signal, astro_priors=astro_priors)
+    return sample_astro_parameters_latin_hypercube(astro_params, seed=i_cosmo, n_examples=n_examples_per_cosmo // n_noise_per_signal, astro_priors=astro_priors)
 
 
-def sample_astro_parameters_latin_hypercube(astro_params, i_cosmo, n_examples, astro_priors):
-    latin_sampler = qmc.LatinHypercube(d=len(astro_params), seed=i_cosmo)
+def sample_astro_parameters_latin_hypercube(astro_params, seed, n_examples, astro_priors):
+    latin_sampler = qmc.LatinHypercube(d=len(astro_params), seed=seed)
     unscaled_samples = latin_sampler.random(n_examples)
     astro_samples = qmc.scale(unscaled_samples, l_bounds=astro_priors[:, 0], u_bounds=astro_priors[:, 1])
     return astro_samples.astype(np.float32)
