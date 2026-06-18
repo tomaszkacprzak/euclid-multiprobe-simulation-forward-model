@@ -5,7 +5,7 @@ Created March 2024
 Author: Arne Thomsen
 
 Transform the full sky weak lensing signal and intrinsic alignment maps into multiple survey footprint cut-outs and
-store them in .tfrecord files. The parallelization is done over the .tfrecord files, every jobarray element corresponds
+store them in .tar WebDataset shards. The parallelization is done over the .tar files, every jobarray element corresponds
 to one.
 
 For the grid, the main loop runs over the cosmologies.
@@ -19,6 +19,7 @@ Meant for
 
 import numpy as np
 import tensorflow as tf
+import webdataset as wds
 import os, argparse, warnings, time, yaml, h5py, pickle, glob, sys
 
 
@@ -33,6 +34,7 @@ from msfm.utils import (
     cosmogrid,
     postprocessing,
     tfrecords,
+    webdatasets,
     power_spectra,
     scales,
     redshift,
@@ -51,14 +53,14 @@ LOGGER = logger.get_logger(__file__)
 
 
 def setup(args):
-    description = "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tfrecord files"
+    description = "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tar WebDataset shards"
     parser = argparse.ArgumentParser(description=description, add_help=True)
 
     parser.add_argument(
         "--n_files",
         type=int,
         default=2500,
-        help="number of .tfrecord files to produce, this should be equal to the number of tasks in esub",
+        help="number of .tar WebDataset shards to produce, this should be equal to the number of tasks in esub",
     )
     parser.add_argument(
         "--dir_in",
@@ -204,11 +206,11 @@ def main(indices, args):
 
     astro_priors = parameters.get_prior_intervals(astro_params, conf=conf)
 
-    # .tfrecords
+    # .tar WebDataset shards
     if n_cosmos % args.n_files == 0:
         n_cosmos_per_file = n_cosmos // args.n_files
         n_examples_per_file = n_examples_per_cosmo * n_cosmos_per_file
-        LOGGER.info(f"The number of files implies {n_cosmos_per_file} cosmological parameters per .tfrecord file")
+        LOGGER.info(f"The number of files implies {n_cosmos_per_file} cosmological parameters per .tar WebDataset shard")
     else:
         raise ValueError(
             f"The total number of cosmologies {n_cosmos} has to be evenly divisible by the number of files {args.n_files}"
@@ -228,7 +230,7 @@ def main(indices, args):
 
     LOGGER.warning(f"Starting the main loop trough indices {indices}")
 
-    # index corresponds to a .tfrecord file ###########################################################################
+    # index corresponds to a .tar WebDataset shard ###########################################################################
     for index in indices:
         LOGGER.warning(f"Starting index {index}")
         LOGGER.timer.start("index")
@@ -237,14 +239,14 @@ def main(indices, args):
             args.dir_out = os.path.join(args.dir_out, "debug")
             os.makedirs(args.dir_out, exist_ok=True)
 
-        tfr_file = filenames.get_filename_tfrecords(
+        wds_file = filenames.get_filename_webdataset(
             args.dir_out,
             tag=conf["survey"]["name"] + args.file_suffix,
             index=index,
             simset="grid",
             with_bary=baryonified,
         )
-        LOGGER.info(f"Index {index} is writing to {tfr_file}")
+        LOGGER.info(f"Index {index} is writing to {wds_file}")
 
         # index for the cosmological parameters
         i_cosmo_start = index * n_cosmos_per_file
@@ -252,7 +254,7 @@ def main(indices, args):
         LOGGER.info(f"And includes {cosmo_dirs[i_cosmo_start : i_cosmo_end]}")
 
         num_total_examples = 0
-        with tf.io.TFRecordWriter(tfr_file) as file_writer:
+        with wds.TarWriter(wds_file) as sink:
             # loop over the cosmological parameters
             for i_cosmo, cosmo_dir_in in LOGGER.progressbar(
                 zip(range(i_cosmo_start, i_cosmo_end), cosmo_dirs_in[i_cosmo_start:i_cosmo_end]),
@@ -285,7 +287,7 @@ def main(indices, args):
                     total=n_perms_per_cosmo,
                 ):  
                                         
-                    LOGGER.info(f"Starting permutation {i_perm:04d}/{n_perms_per_cosmo} for cosmology {i_cosmo}/{n_cosmos_per_file} for file {tfr_file}")
+                    LOGGER.info(f"Starting permutation {i_perm:04d}/{n_perms_per_cosmo} for cosmology {i_cosmo}/{n_cosmos_per_file} for file {wds_file}")
                     LOGGER.timer.start("permutation")
 
                     rng_perm = np.random.default_rng(int(conf['master_seed']) + i_cosmo * n_perms_per_cosmo + i_perm)
@@ -464,12 +466,13 @@ def main(indices, args):
                             # power spectra
                             cls = power_spectra.run_tfrecords_alm_to_cl(alm_kg, alm_sn_samples, alm_dg, alm_pn_samples)
 
-                            serialized = tfrecords.parse_forward_grid(
+                            sample = webdatasets.encode_grid_sample(
                                 kg, sn_samples, dg, pn_samples, cls, cosmo_sample, i_sobol, i_signal, xg, xn_samples
-                            ).SerializeToString()
+                            )
+                            sample["__key__"] = f"grid_{i_sobol:06d}_{i_signal:06d}"
 
-                            tfrecords.verify_tfrecord(
-                                serialized,
+                            webdatasets.verify_grid_sample(
+                                sample,
                                 n_noise_per_signal,
                                 kg,
                                 sn_samples,
@@ -484,8 +487,8 @@ def main(indices, args):
                             )
 
                             num_processed_examples += 1
-                            LOGGER.debug(f"Writing example to {tfr_file} i_perm={i_perm}, i_patch={i_patch} i_signal={i_signal} kg.shape={kg.shape}, sn_samples.shape={sn_samples.shape}, dg.shape={dg.shape}, pn_samples.shape={pn_samples.shape}")
-                            file_writer.write(serialized)
+                            LOGGER.debug(f"Writing example to {wds_file} i_perm={i_perm}, i_patch={i_patch} i_signal={i_signal} kg.shape={kg.shape}, sn_samples.shape={sn_samples.shape}, dg.shape={dg.shape}, pn_samples.shape={pn_samples.shape}")
+                            sink.write(sample)
 
                         LOGGER.info(f"Done with permutation {i_perm:04d} time taken {LOGGER.timer.elapsed('permutation')}")
 

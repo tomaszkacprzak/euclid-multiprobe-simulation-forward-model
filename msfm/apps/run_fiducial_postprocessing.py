@@ -5,7 +5,7 @@ Created March 2024
 Author: Arne Thomsen
 
 Transform the full sky weak lensing signal and intrinsic alignment maps into multiple survey footprint cut-outs and
-store them in .tfrecord files. The parallelization is done over the .tfrecord files, every jobarray element corresponds
+store them in .tar WebDataset shards. The parallelization is done over the .tar files, every jobarray element corresponds
 to one.
 
 For the fiducial, the main loop runs over the different permutations (simulation runs).
@@ -19,6 +19,7 @@ Meant for
 
 import numpy as np
 import tensorflow as tf
+import webdataset as wds
 import os, argparse, warnings, time, yaml, h5py, pickle
 
 from msfm.utils import (
@@ -31,6 +32,7 @@ from msfm.utils import (
     cosmogrid,
     postprocessing,
     tfrecords,
+    webdatasets,
     power_spectra,
     scales,
     parameters,
@@ -74,14 +76,14 @@ def resources(args):
 
 
 def setup(args):
-    description = "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tfrecord files"
+    description = "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tar WebDataset shards"
     parser = argparse.ArgumentParser(description=description, add_help=True)
 
     parser.add_argument(
         "--n_files",
         type=int,
         default=2500,
-        help="number of .tfrecord files to produce, this should be equal to the number of tasks in esub",
+        help="number of .tar WebDataset shards to produce, this should be equal to the number of tasks in esub",
     )
     parser.add_argument(
         "--dir_in",
@@ -158,7 +160,7 @@ def setup(args):
 
     args.to_san = "/home/ipa/refreg" in args.dir_out
     if args.to_san:
-        LOGGER.warning("Writing the .tfrecords to the SAN")
+        LOGGER.warning("Writing the .tar WebDataset shards to the SAN")
     elif not os.path.isdir(args.dir_out):
         input_output.robust_makedirs(args.dir_out)
 
@@ -232,7 +234,7 @@ def main(indices, args):
         f"{n_patches} patches times {n_perms_per_cosmo} permutations times {n_noise_per_signal} noise realizations"
     )
 
-    # .tfrecords
+    # .tar WebDataset shards
     if n_perms_per_cosmo % args.n_files == 0:
         n_perms_per_file = n_perms_per_cosmo // args.n_files
         n_examples_per_file = n_examples_per_cosmo // args.n_files
@@ -268,13 +270,13 @@ def main(indices, args):
 
     LOGGER.warning(f"Starting the main loop trough indices {indices}")
 
-    # index corresponds to a .tfrecord file ###########################################################################
+    # index corresponds to a .tar WebDataset shard ###########################################################################
     for index in indices:
         LOGGER.warning(f"Starting index {index}")
         LOGGER.timer.start("index")
 
         if args.to_san:
-            LOGGER.info("Writing the .tfrecord to local scratch to be later copied to the SAN")
+            LOGGER.info("Writing the .tar WebDataset shard to local scratch to be later copied to the SAN")
             san_dir_out = args.dir_out
             args.dir_out = os.environ["TMPDIR"]
 
@@ -282,21 +284,21 @@ def main(indices, args):
             args.dir_out = os.path.join(args.dir_out, "debug")
             os.makedirs(args.dir_out, exist_ok=True)
 
-        tfr_file = filenames.get_filename_tfrecords(
+        wds_file = filenames.get_filename_webdataset(
             args.dir_out,
             tag=conf["survey"]["name"] + args.file_suffix,
             index=index,
             simset="fiducial",
             with_bary=baryonified,
         )
-        LOGGER.info(f"Index {index} is writing to {tfr_file}")
+        LOGGER.info(f"Index {index} is writing to {wds_file}")
 
         # used to index permutations
         i_perm_start = index * n_perms_per_file
         i_perm_end = (index + 1) * n_perms_per_file
 
         n_done = 0
-        with tf.io.TFRecordWriter(tfr_file) as file_writer:
+        with wds.TarWriter(wds_file) as sink:
             # loop over the example realizations
             for i_perm in LOGGER.progressbar(
                 range(i_perm_start, i_perm_end),
@@ -465,10 +467,10 @@ def main(indices, args):
                             LOGGER.warning(f"Debug mode, writing the state to {state_file}")
                             pickle.dump(state, f)
 
-                # the .tfrecord entries are individual examples
-                LOGGER.info(f"Writing the {n_patches} patches to the .tfrecord")
+                # the .tar WebDataset entries are individual examples
+                LOGGER.info(f"Writing the {n_patches} patches to the .tar WebDataset shard")
                 for i_patch in range(n_patches):
-                    serialized = _serialize_and_verify(
+                    sample = _encode_and_verify(
                         n_noise_per_signal,
                         # labels
                         cosmo_pert_labels,
@@ -487,12 +489,12 @@ def main(indices, args):
                         all_i_example[i_patch],
                     )
 
-                    file_writer.write(serialized)
+                    sink.write(sample)
 
                 n_done += 1
 
         if args.to_san:
-            postprocessing._rsync_tfrecord_to_san(conf, tfr_file, san_dir_out)
+            postprocessing._rsync_tfrecord_to_san(conf, wds_file, san_dir_out)
 
         LOGGER.info(f"Done with index {index} after {LOGGER.timer.elapsed('index')}")
         yield index
@@ -683,7 +685,7 @@ def _get_clustering_transform(conf, pixel_file):
     return clustering_transform
 
 
-def _serialize_and_verify(
+def _encode_and_verify(
     n_noise_per_signal,
     # labels
     cosmo_pert_labels,
@@ -702,8 +704,7 @@ def _serialize_and_verify(
     i_signal,
 ):
 
-    # serialize
-    serialized = tfrecords.parse_forward_fiducial(
+    sample = webdatasets.encode_fiducial_sample(
         cosmo_pert_labels,
         kg_perts,
         dg_perts,
@@ -720,48 +721,32 @@ def _serialize_and_verify(
         cl_ia_perts,
         cl_bg_perts,
         i_signal,
-    ).SerializeToString()
+    )
+    sample["__key__"] = f"fiducial_{int(i_signal):06d}"
 
-    # verify
-    inv_tfr = tfrecords.parse_inverse_fiducial(
-        serialized, cosmo_pert_labels + ia_pert_labels + bg_pert_labels, range(n_noise_per_signal)
+    expected = {
+        **{f"kg_{pert_label}": kg_pert for pert_label, kg_pert in zip(cosmo_pert_labels, kg_perts)},
+        **{f"kg_{pert_label}": ia_pert for pert_label, ia_pert in zip(ia_pert_labels, ia_perts)},
+        **{f"dg_{pert_label}": dg_pert for pert_label, dg_pert in zip(cosmo_pert_labels, dg_perts)},
+        **{f"dg_{pert_label}": bg_pert for pert_label, bg_pert in zip(bg_pert_labels, bg_perts)},
+        **{f"sn_{i_noise}": sn_samples[i_noise] for i_noise in range(n_noise_per_signal)},
+        **{f"pn_{i_noise}": pn_samples[i_noise] for i_noise in range(n_noise_per_signal)},
+        **{f"cl_{pert_label}": cl_pert for pert_label, cl_pert in zip(cosmo_pert_labels, cl_perts)},
+        **{f"cl_{pert_label}": cl_ia_pert for pert_label, cl_ia_pert in zip(ia_pert_labels, cl_ia_perts)},
+        **{f"cl_{pert_label}": cl_bg_pert for pert_label, cl_bg_pert in zip(bg_pert_labels, cl_bg_perts)},
+        "i_signal": i_signal,
+    }
+    webdatasets.verify_fiducial_sample(
+        sample, cosmo_pert_labels + ia_pert_labels + bg_pert_labels, range(n_noise_per_signal), expected
     )
 
-    # maps
-    inv_kg_perts = tf.stack([inv_tfr[f"kg_{pert_label}"] for pert_label in cosmo_pert_labels], axis=0)
-    inv_ia_perts = tf.stack([inv_tfr[f"kg_{pert_label}"] for pert_label in ia_pert_labels], axis=0)
-    inv_dg_perts = tf.stack([inv_tfr[f"dg_{pert_label}"] for pert_label in cosmo_pert_labels], axis=0)
-    inv_bg_perts = tf.stack([inv_tfr[f"dg_{pert_label}"] for pert_label in bg_pert_labels], axis=0)
-
-    assert np.allclose(inv_kg_perts, kg_perts)
-    assert np.allclose(inv_ia_perts, ia_perts)
-    assert np.allclose(inv_dg_perts, dg_perts)
-    assert np.allclose(inv_bg_perts, bg_perts)
-    for i_noise in range(n_noise_per_signal):
-        assert np.allclose(inv_tfr[f"sn_{i_noise}"], sn_samples[i_noise])
-        assert np.allclose(inv_tfr[f"pn_{i_noise}"], pn_samples[i_noise])
-    assert np.allclose(inv_tfr["i_signal"], i_signal)
-
-    # power spectra
-    inv_cl_perts = tf.stack([inv_tfr[f"cl_{pert_label}"] for pert_label in cosmo_pert_labels], axis=0)
-    inv_cl_ia_perts = tf.stack([inv_tfr[f"cl_{pert_label}"] for pert_label in ia_pert_labels], axis=0)
-    inv_cl_bg_perts = tf.stack([inv_tfr[f"cl_{pert_label}"] for pert_label in bg_pert_labels], axis=0)
-
-    assert np.allclose(inv_cl_perts, cl_perts)
-    assert np.allclose(inv_cl_ia_perts, cl_ia_perts)
-    assert np.allclose(inv_cl_bg_perts, cl_bg_perts)
-
-    LOGGER.debug("Decoded the map part of the .tfrecord successfully")
-
-    # legacy power spectra
-    inv_cls = tfrecords.parse_inverse_fiducial_cls(serialized)
+    inv_cls = webdatasets.decode_fiducial_cls_sample(sample)
     assert np.allclose(inv_cls["cls"], cl_perts[0])
     assert np.allclose(inv_cls["i_signal"], i_signal)
 
-    LOGGER.debug("Decoded the cls part of the .tfrecord successfully")
+    LOGGER.debug("Decoded the WebDataset fiducial sample successfully")
 
-    return serialized
-
+    return sample
 
 def merge(indices, args):
     args = setup(args)
