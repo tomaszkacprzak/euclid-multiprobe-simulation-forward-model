@@ -1,3 +1,4 @@
+# Deprecated TFRecord pipeline: retained for legacy runs; active pipelines use WebDataset shards.
 esub ../../msfm/apps/run_grid_postprocessing.py \
     --n_files=2500 \
     --config=../../configs/marcel/simple.yaml \

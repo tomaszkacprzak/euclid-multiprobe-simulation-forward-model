@@ -2,11 +2,7 @@
 
 """Utilities for serializing MSFM samples as WebDataset dictionaries.
 
-The TFRecord helpers in :mod:`msfm.utils.tfrecords` serialize arrays with
-``tf.io.serialize_tensor``.  WebDataset shards commonly store each array as its
-own file-like payload instead.  This module stores NumPy arrays as ``.npy``
-bytes while keeping the logical field names and decoded output dictionaries
-compatible with the existing TFRecord parsers.
+WebDataset shards store each array as its own file-like payload. This module stores NumPy arrays as ``.npy`` bytes while keeping the logical field names and decoded output dictionaries stable for downstream readers.
 """
 
 from __future__ import annotations
@@ -277,7 +273,7 @@ def encode_grid_sample(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal
 
     The array field names mirror ``parse_forward_grid``: ``cosmo``, ``cls``,
     ``kg_{i}``, ``dg_{i}``, and optionally ``xg_{i}``.  Arrays are stored under
-    ``<field>.npy`` keys and scalar metadata keeps the original TFRecord names.
+    ``<field>.npy`` keys and scalar metadata keeps the stable field names.
     """
     sample: Sample = {
         SCHEMA_VERSION_KEY: SCHEMA_VERSION,

@@ -225,8 +225,8 @@ def smooth_and_bin_cls(
     return binned_cls, bin_edges
 
 
-def run_tfrecords_alm_to_cl(alm_kg, alm_sn_realz, alm_dg, alm_pn_realz):
-    """To be used in run_grid_tfrecords.py and run_fiducial_tfrecords.py to compute the (noisy) Cls from the alms.
+def run_alm_to_cl(alm_kg, alm_sn_realz, alm_dg, alm_pn_realz):
+    """To be used in the grid and fiducial postprocessing apps to compute the (noisy) Cls from the alms.
     Note that no binning is applied here, the Cls are returned in full.
 
     Args:
@@ -317,3 +317,7 @@ def bin_according_to_config(cls, conf):
     )
 
     return binned_cls, bin_edges
+
+
+# Deprecated backward-compatible alias for old TFRecord preprocessing apps.
+run_tfrecords_alm_to_cl = run_alm_to_cl

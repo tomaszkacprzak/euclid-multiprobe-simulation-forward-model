@@ -1,3 +1,4 @@
+# Deprecated TFRecord pipeline: retained for legacy runs; active pipelines use WebDataset shards.
 # datavectors
 - name: fiducial_dv
   cmd: esub msfm/apps/run_datavectors.py --simset=fiducial --config=configs/v7/linear_bias.yaml --dir_in=/cluster/scratch/athomsen/CosmoGrid/fiducial --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/fiducial --mode=jobarray --function=all --n_jobs=1 --tasks="0" --job_name=dv_fidu --system=slurm --main_time=24

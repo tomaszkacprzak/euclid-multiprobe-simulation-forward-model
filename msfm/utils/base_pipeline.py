@@ -57,7 +57,7 @@ class MSFMpipeline:
                 networks) need this. Defaults to True.
             z_bin_inds (list, optional): Specify the indices of the redshift bins to be included. Note that this is
                 mainly meant for testing purposes and is inefficient, since all redshift bins are loaded from the
-                .tfrecords nonetheless. Defaults to None, then all redshift bins are kept.
+                WebDataset shards nonetheless. Defaults to None, then all redshift bins are kept.
             return_maps (bool, optional): Whether to return the maps. Defaults to True.
             return_cls (bool, optional): Whether to return the cls. Defaults to True.
             apply_m_bias (bool, optional): Whether to include the multiplicative shear bias. Defaults to True.

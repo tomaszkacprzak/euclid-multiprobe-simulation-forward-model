@@ -72,7 +72,7 @@ analysis:
     rotation:
       y_rad: -0.125
       z_rad: -1.22
-  # see scale_cuts.ipynb. All angles are in arcmin. These are the scale cuts that are baked into the .tfrecords.
+  # see scale_cuts.ipynb. All angles are in arcmin. These are the scale cuts that are baked into the WebDataset shards.
   # The angle -> ell conversion is done in the "naive" way in 6.2 of https://academic.oup.com/mnras/article/505/4/5714/6296446
   scale_cuts:
     hard_cut: True

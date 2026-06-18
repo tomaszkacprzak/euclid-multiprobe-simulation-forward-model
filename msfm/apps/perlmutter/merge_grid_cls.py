@@ -4,12 +4,20 @@
 Created May 2024
 Author: Arne Thomsen
 
+<<<<<<< HEAD
+Merge WebDataset power spectra into HDF5 on Perlmutter.
+"""
+
+
+import argparse, os, h5py, glob, itertools
+=======
 Merge function from msfm/apps/run_grid_preprocessing.py since this only works if the WebDataset tar shards stay on Euler,
 not when they are directly stored on the SAN or Perlmutter. In that case, the merge has to be run on Perlmutter later,
 like here.
 """
 
 import argparse, os, h5py, glob
+>>>>>>> torch-rewrite
 import numpy as np
 import webdataset as wds
 
@@ -18,10 +26,24 @@ from msfm.utils import files, logger, filenames, webdatasets, power_spectra
 LOGGER = logger.get_logger(__file__)
 
 
+def _batched(samples, batch_size):
+    """Yield dictionaries of WebDataset examples stacked into cosmology batches."""
+    iterator = iter(samples)
+    while True:
+        batch = list(itertools.islice(iterator, batch_size))
+        if not batch:
+            break
+        yield {key: np.stack([sample[key].numpy() for sample in batch], axis=0) for key in batch[0]}
+
+
 def setup(args):
+<<<<<<< HEAD
+    description = "Merge WebDataset power spectra into HDF5"
+=======
     description = (
         "Preprocess the CosmoGrid projections into forward-modeled survey footprints in .tar WebDataset shards"
     )
+>>>>>>> torch-rewrite
     parser = argparse.ArgumentParser(description=description, add_help=True)
 
     parser.add_argument(
@@ -81,7 +103,11 @@ def merge(indices, args):
     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     n_signal_per_cosmo = n_patches * n_perms_per_cosmo
 
+<<<<<<< HEAD
+    webdataset_pattern = filenames.get_filename_webdataset(
+=======
     wds_pattern = filenames.get_filename_webdataset(
+>>>>>>> torch-rewrite
         args.dir_out,
         tag=conf["survey"]["name"] + args.file_suffix,
         with_bary=conf["analysis"]["modelling"]["baryonified"],
@@ -89,6 +115,12 @@ def merge(indices, args):
         simset="grid",
         return_pattern=True,
     )
+<<<<<<< HEAD
+    webdataset_files = sorted(glob.glob(webdataset_pattern))
+
+    cls_samples = (webdatasets.decode_grid_cls_sample(sample) for sample in wds.WebDataset(webdataset_files, shardshuffle=False))
+    cls_dset = _batched(cls_samples, n_signal_per_cosmo)
+=======
     wds_files = sorted(glob.glob(wds_pattern))
     if not wds_files:
         raise FileNotFoundError(f"No WebDataset tar shards match pattern {wds_pattern!r}")
@@ -105,6 +137,7 @@ def merge(indices, args):
                 f"Found an incomplete cosmology batch with {len(batch)} samples; "
                 f"expected {n_signal_per_cosmo} samples per cosmology"
             )
+>>>>>>> torch-rewrite
 
     cls = []
     binned_cls = []
@@ -114,10 +147,14 @@ def merge(indices, args):
     i_examples = []
     i_noises = []
     for example in LOGGER.progressbar(
+<<<<<<< HEAD
+        cls_dset, total=n_cosmos, desc="Looping through the different cosmologies in the WebDataset shards", at_level="info"
+=======
         iter_cosmology_batches(),
         total=n_cosmos,
         desc="Looping through the different cosmologies in the WebDataset tar shards",
         at_level="info",
+>>>>>>> torch-rewrite
     ):
         cl = example["cls"]
         cosmo = example["cosmo"]
@@ -143,7 +180,11 @@ def merge(indices, args):
         i_sobol = np.tile(i_sobol, n_noise_per_signal)
         i_signal = np.tile(i_signal, n_noise_per_signal)
 
+<<<<<<< HEAD
+        # noise is treated separately because it's along a separate dimension in the WebDataset shards. This here preserves
+=======
         # noise is treated separately because it's along a separate dimension in the WebDataset tar shards. This here is preserves
+>>>>>>> torch-rewrite
         # the order imposed above in power_spectrum = ...
         i_noise = np.arange(n_noise_per_signal)
         i_noise = np.repeat(i_noise, n_signal_per_cosmo)
@@ -165,7 +206,11 @@ def merge(indices, args):
     i_examples = np.array(i_examples)
     i_noises = np.array(i_noises)
 
+<<<<<<< HEAD
+    # separate folder on the same level as WebDataset shards
+=======
     # separate folder on the same level as WebDataset tar shards
+>>>>>>> torch-rewrite
     if args.debug:
         out_dir = args.dir_out
     else:

@@ -1,3 +1,4 @@
+# Deprecated TFRecord pipeline: retained for legacy runs; active pipelines use WebDataset shards.
 # on Euler
 esub msfm/apps/run_fiducial_preprocessing.py \
     --n_files=1000 \
