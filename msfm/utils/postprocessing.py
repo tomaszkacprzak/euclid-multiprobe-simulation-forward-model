@@ -11,8 +11,6 @@ TODO the function argument orders in this file aren't consistent, this should be
 """
 
 import numpy as np
-import tensorflow as tf
-import tensorflow_probability as tfp
 import os, time, h5py, copy_guardian, pickle
 from msfm.utils import logger, filenames, imports, lensing, clustering, maps, input_output, files
 
@@ -431,7 +429,7 @@ def postprocess_shape_noise(
     w = gamma_cat[:, 2]
 
     if sc_mode in ["fixed", "prior"]:
-        # cat_dist = tfp.distributions.Empirical(samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1)
+        # Historical empirical distribution construction removed during PyTorch migration.
 
         # normalize to number density contrast
         # delta_full_sky_norm = (delta_full_sky - np.mean(delta_full_sky)) / np.mean(delta_full_sky)

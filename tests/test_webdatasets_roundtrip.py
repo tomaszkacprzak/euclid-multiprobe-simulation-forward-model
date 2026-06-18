@@ -129,7 +129,6 @@ def test_grid_webdataset_optional_cross_maps_are_absent_when_disabled(tmp_path):
 
 
 def _minimal_grid_pipeline(*, return_maps=True, return_cls=True, with_cross=False):
-    tf = pytest.importorskip("tensorflow")
     from msfm.grid_pipeline import GridPipeline
 
     pipeline = GridPipeline.__new__(GridPipeline)
@@ -180,17 +179,17 @@ def test_grid_pipeline_loader_returns_torch_tensors_for_maps_cls_and_indices(tmp
         )
     )
     if return_maps:
-        assert isinstance(map_tensor, torch.Tensor)
-        assert tuple(map_tensor.shape) == (1, N_PIX, N_Z_WL + N_Z_GC)
+        assert isinstance(batch["maps"], torch.Tensor)
+        assert tuple(batch["maps"].shape) == (1, N_PIX, N_Z_WL + N_Z_GC)
     else:
         assert "maps" not in batch
     if return_cls:
-        assert isinstance(cl_tensor, torch.Tensor)
-        assert tuple(cl_tensor.shape) == (1, N_CLS, N_Z_CROSS)
+        assert isinstance(batch["cls"], torch.Tensor)
+        assert tuple(batch["cls"].shape) == (1, N_CLS, N_Z_CROSS)
     else:
-        assert cl_tensor is None
-    assert isinstance(cosmo_tensor, torch.Tensor)
-    assert all(isinstance(value, torch.Tensor) for value in index)
+        assert "cls" not in batch
+    assert isinstance(batch["cosmo"], torch.Tensor)
+    assert all(isinstance(batch[key], torch.Tensor) for key in ("i_sobol", "i_signal", "i_noise"))
 
 
 def test_grid_pipeline_loader_returns_torch_tensor_for_optional_cross_maps(tmp_path):
@@ -213,11 +212,11 @@ def test_grid_pipeline_loader_returns_torch_tensor_for_optional_cross_maps(tmp_p
         )
     )
 
-    assert isinstance(map_tensor, torch.Tensor)
-    assert tuple(map_tensor.shape) == (1, N_PIX, N_Z_CROSS_MAP)
-    assert cl_tensor is None
-    assert isinstance(cosmo_tensor, torch.Tensor)
-    assert all(isinstance(value, torch.Tensor) for value in index)
+    assert isinstance(batch["maps"], torch.Tensor)
+    assert tuple(batch["maps"].shape) == (1, N_PIX, N_Z_CROSS_MAP)
+    assert "cls" not in batch
+    assert isinstance(batch["cosmo"], torch.Tensor)
+    assert all(isinstance(batch[key], torch.Tensor) for key in ("i_sobol", "i_signal", "i_noise"))
 
 
 def _fiducial_arrays():
@@ -399,60 +398,61 @@ def test_grid_webdataset_decode_can_return_pytorch_tensors(tmp_path):
 def test_grid_pipeline_masks_padding_and_z_bin_selection_exact_tensors():
     pipeline = _minimal_grid_pipeline(return_maps=True, return_cls=True, with_cross=False)
     pipeline.with_padding = False
-    pipeline.mask_total = tf.constant([True, False, True, True, False])
+    pipeline.mask_total = torch.tensor([True, False, True, True, False])
     pipeline.z_bin_inds = [2, 0]
-    pipeline.masks_WL = tf.constant(
-        [[1.0, 0.0], [1.0, 1.0], [0.5, 1.0], [1.0, 1.0], [0.0, 1.0]], dtype=tf.float32
+    pipeline.masks_WL = torch.tensor(
+        [[1.0, 0.0], [1.0, 1.0], [0.5, 1.0], [1.0, 1.0], [0.0, 1.0]], dtype=torch.float32
     )
-    pipeline.masks_GC = tf.constant([[1.0], [0.0], [1.0], [0.5], [1.0]], dtype=tf.float32)
+    pipeline.masks_GC = torch.tensor([[1.0], [0.0], [1.0], [0.5], [1.0]], dtype=torch.float32)
 
-    kg = tf.constant(
+    kg = torch.tensor(
         [
             [[1.0, 10.0], [2.0, 20.0], [3.0, 30.0], [4.0, 40.0], [5.0, 50.0]],
         ],
-        dtype=tf.float32,
+        dtype=torch.float32,
     )
-    dg = tf.constant([[[100.0], [200.0], [300.0], [400.0], [500.0]]], dtype=tf.float32)
-    cl = tf.reshape(tf.range(N_CLS * N_Z_CROSS, dtype=tf.float32), (1, N_CLS, N_Z_CROSS))
+    dg = torch.tensor([[[100.0], [200.0], [300.0], [400.0], [500.0]]], dtype=torch.float32)
+    cl = torch.reshape(torch.arange(N_CLS * N_Z_CROSS, dtype=torch.float32), (1, N_CLS, N_Z_CROSS))
     data_vectors = {
-        "cosmo": tf.constant([[0.125, 0.25]], dtype=tf.float32),
+        "cosmo": torch.tensor([[0.125, 0.25]], dtype=torch.float32),
         "kg": kg,
         "dg": dg,
         "cl": cl,
-        "i_sobol": tf.constant([7], dtype=tf.int64),
-        "i_signal": tf.constant([11], dtype=tf.int64),
-        "i_noise": tf.constant([2], dtype=tf.int64),
+        "i_sobol": torch.tensor([7], dtype=torch.int64),
+        "i_signal": torch.tensor([11], dtype=torch.int64),
+        "i_noise": torch.tensor([2], dtype=torch.int64),
     }
 
-    map_tensor, cl_tensor, cosmo_tensor, index = pipeline._augmentations(dict(data_vectors))
+    batch = pipeline._augmentations(dict(data_vectors))
 
-    expected_full = tf.concat([kg * pipeline.masks_WL, dg * pipeline.masks_GC], axis=-1)
-    expected = tf.gather(tf.boolean_mask(expected_full, pipeline.mask_total, axis=1), pipeline.z_bin_inds, axis=-1)
-    tf.debugging.assert_equal(map_tensor, expected)
-    tf.debugging.assert_equal(cl_tensor, cl)
-    tf.debugging.assert_equal(cosmo_tensor, data_vectors["cosmo"])
-    for got, want in zip(index, (data_vectors["i_sobol"], data_vectors["i_signal"], data_vectors["i_noise"])):
-        tf.debugging.assert_equal(got, want)
+    expected_full = torch.cat([kg * pipeline.masks_WL, dg * pipeline.masks_GC], dim=-1)
+    expected = torch.index_select(expected_full[:, pipeline.mask_total, :], -1, torch.tensor(pipeline.z_bin_inds))
+    torch.testing.assert_close(batch["maps"], expected)
+    torch.testing.assert_close(batch["cls"], cl)
+    torch.testing.assert_close(batch["cosmo"], data_vectors["cosmo"])
+    for key in ("i_sobol", "i_signal", "i_noise"):
+        torch.testing.assert_close(batch[key], data_vectors[key])
 
 
 def test_grid_downsampling_unsorted_segment_mean_parent_indices_hand_computed():
-    dv = tf.constant(
+    from msfm.grid_pipeline import _unsorted_segment_mean
+    dv = torch.tensor(
         [
             [[1.0, 10.0], [3.0, 30.0], [5.0, 50.0], [7.0, 70.0]],
             [[2.0, 20.0], [4.0, 40.0], [6.0, 60.0], [8.0, 80.0]],
         ],
-        dtype=tf.float32,
+        dtype=torch.float32,
     )
-    parent_output_idx = tf.constant([0, 1, 0, 1], dtype=tf.int32)
+    parent_output_idx = torch.tensor([0, 1, 0, 1], dtype=torch.int64)
 
-    dv_t = tf.transpose(dv, perm=[1, 0, 2])
-    downsampled = tf.transpose(tf.math.unsorted_segment_mean(dv_t, parent_output_idx, 2), perm=[1, 0, 2])
+    dv_t = dv.permute(1, 0, 2)
+    downsampled = _unsorted_segment_mean(dv_t, parent_output_idx, 2, dim=0).permute(1, 0, 2)
 
-    expected = tf.constant(
+    expected = torch.tensor(
         [
             [[3.0, 30.0], [5.0, 50.0]],
             [[4.0, 40.0], [6.0, 60.0]],
         ],
-        dtype=tf.float32,
+        dtype=torch.float32,
     )
-    tf.debugging.assert_equal(downsampled, expected)
+    torch.testing.assert_close(downsampled, expected)

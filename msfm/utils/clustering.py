@@ -12,7 +12,6 @@ import numpy as np
 from sobol_seq import i4_sobol
 
 from msfm.utils import files, imports, parameters
-import tensorflow as tf
 import torch
 
 hp = imports.import_healpy()
@@ -33,14 +32,14 @@ def galaxy_density_to_count(
     systematics_map=None,
     # format
     mask=None,
-    backend='tensorflow',
+    backend='torch',
 ):
     """Transform a galaxy density to a galaxy count map, according to the constants defined in the config file.
     Negative values are clipped and the maps tranformed to conserve the total number of galaxies like in DeepLSS.
 
     Args:
         ng_bar (np.ndarray): Average number of galaxies per pixel (optionally per tomographic bin).
-        dg (Union[np.ndarray, tf.Tensor, torch.Tensor]): Galaxy density contrast map or datavector. Optionally per tomographic bin
+        dg (Union[np.ndarray, torch.Tensor, torch.Tensor]): Galaxy density contrast map or datavector. Optionally per tomographic bin
             in the last array dimension.
         bg (np.ndarray): Effective linear galaxy biasing parameter (optionally per tomographic bin).
         qdg (np.ndarray, optional): Squared galaxy density contrast map (optionally per tomographic bin).
@@ -50,7 +49,7 @@ def galaxy_density_to_count(
 
 
     Raises:
-        ValueError: If something apart from a numpy array or tensorflow tensor is passed.
+        ValueError: If something apart from a numpy array or torch tensor is passed.
 
     Returns:
         ng: Galaxy number count map.
@@ -76,13 +75,7 @@ def galaxy_density_to_count(
         ng_clip = np.clip(ng, a_min=0, a_max=None, dtype=np.float32)
         ng = ng_clip * np.sum(ng) / np.sum(ng_clip)
     
-    elif backend == 'tensorflow':
-        import tensorflow as tf
-        ng_clip = tf.clip_by_value(ng, clip_value_min=0, clip_value_max=1e5)
-        ng = ng_clip * tf.reduce_sum(ng) / tf.reduce_sum(ng_clip)
-    
     elif backend == 'torch':
-        import torch
         ng_clip = torch.clamp(ng, min=0, max=1e5)
         ng = ng_clip * torch.sum(ng) / torch.sum(ng_clip)
 
@@ -105,12 +98,12 @@ def galaxy_count_to_noise(ng, n_noise, np_seed=None):
     Draw Poisson noise according to the given map of galaxy counts.
 
     Args:
-        ng (Union[np.ndarray, tf.Tensor]): Galaxy number count map or datavector. Optionally per tomographic bin.
+        ng (Union[np.ndarray, torch.Tensor]): Galaxy number count map or datavector. Optionally per tomographic bin.
         n_noise (int): Number of noise realizations to draw.
         np_seed (int, optional): Seed for the numpy random number generator. Defaults to None.
 
     Raises:
-        ValueError: If something apart from a numpy array or tensorflow tensor is passed.
+        ValueError: If something apart from a numpy array or torch tensor is passed.
 
     Returns:
         poisson_noise: Pure (e.g. the input galaxy count map has been subtracted) Poisson noise consistent with the
@@ -133,7 +126,7 @@ def galaxy_count_to_noise(ng, n_noise, np_seed=None):
         # shape (n_noise, n_pix) is broadcast along the first axis
         poisson_noise = noisy_ngs - ng
 
-    # elif isinstance(ng, tf.Tensor):
+    # elif isinstance(ng, torch.Tensor):
     #     raise NotImplementedError
 
     return poisson_noise

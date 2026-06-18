@@ -162,7 +162,7 @@ class GridPipeline(MSFMpipeline):
 
         Compatibility note: this method name is kept for existing callers, but it now returns a
         :class:`webdataset.WebLoader` whose batches are dictionaries of ``torch.Tensor`` objects instead of a
-        ``tf.data.Dataset`` yielding tuple outputs.
+        framework-specific dataset yielding tuple outputs.
 
         Args:
             pattern (str): Glob pattern of the fiducial WebDataset .tar shards.
@@ -182,7 +182,7 @@ class GridPipeline(MSFMpipeline):
                 should be roughly less than a tenth of the number of files. Large values cost a lot of RAM, especially
                 in the distributed setting. Defaults to 4.
             n_workers (int, optional): Number of parallel workers for the file reading, file parsing and preprocessing
-                augmentations. Defaults to None, then tf.data.AUTOTUNE is used. Note that this may lead to unexpected
+                augmentations. Defaults to None, then automatic worker tuning is used. Note that this may lead to unexpected
                 RAM usage, especially if there's more than one dataset within the same script.
             n_prefetch (int, optional): Number of dataset elements to prefetch.
             is_eval (bool, optional): If this is True, then the dataset won't be shuffled repeatedly, such that one can
@@ -190,10 +190,8 @@ class GridPipeline(MSFMpipeline):
             eval_seed (int, optional): Fixed seed for evaluation. Defaults to 32.
             file_name_shuffle_seed (int, optional): Defaults to 17.
             examples_shuffle_seed (int, optional): Defaults to 67.
-            input_context (Union[tf.distribute.InputContext, deep_lss.utils.distribute.HorovodStrategy], optional):
-                Custom input_context attribute of my HorovodStrategy class or when using the TensorFlow builtin
-                distribution strategies, this is passed to the dataset_fn like in
-                https://www.tensorflow.org/tutorials/distribute/input#tfdistributestrategydistribute_datasets_from_function
+            input_context (distributed input context, optional):
+                Custom input_context attribute for distributed loading; this is used to shard the file list across input pipelines.
                 Then, the dataset is sharded. Defaults to None for a non distributed dataset.
 
                 Example usage:
@@ -265,7 +263,7 @@ class GridPipeline(MSFMpipeline):
             # input_context.input_pipeline_id = 0, indicating that no sharding happens
             # NOTE My HorovodStrategy is written to be compatible with this
 
-            # Taken from https://www.tensorflow.org/tutorials/distribute/input#usage_2
+            # Taken from the distributed input sharding pattern
             n_file_names_before_sharding = len(file_names)
             file_names = file_names[input_context.input_pipeline_id :: input_context.num_input_pipelines]
             LOGGER.info(
