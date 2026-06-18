@@ -80,7 +80,7 @@ class GridPipeline(MSFMpipeline):
             z_bin_inds=z_bin_inds,
             return_maps=return_maps,
             return_cls=return_cls,
-            # these are fixed in the .tfrecord files
+            # these are fixed in the WebDataset samples
             apply_m_bias=False,
             shape_noise_scale=1.0,
             poisson_noise_scale=1.0,

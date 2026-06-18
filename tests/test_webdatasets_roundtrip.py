@@ -1,11 +1,10 @@
 import pytest
 
 np = pytest.importorskip("numpy")
-tf = pytest.importorskip("tensorflow")
+torch = pytest.importorskip("torch")
 wds = pytest.importorskip("webdataset")
 torch = pytest.importorskip("torch")
 
-from msfm.grid_pipeline import GridPipeline
 from msfm.utils import webdatasets
 
 N_PIX = 5
@@ -58,8 +57,8 @@ def _read_single_sample(path):
 
 
 def _assert_tensor_matches(tensor, array):
-    assert isinstance(tensor, tf.Tensor)
-    assert tensor.dtype == tf.float32
+    assert isinstance(tensor, torch.Tensor)
+    assert tensor.dtype == torch.float32
     assert tuple(tensor.shape) == tuple(array.shape)
     np.testing.assert_array_equal(tensor.numpy(), array)
 
@@ -86,8 +85,8 @@ def test_grid_webdataset_tar_roundtrips_arrays_dtypes_shapes_and_noise_indices(t
     _assert_tensor_matches(decoded["xg_0"], xg + xn[0])
     _assert_tensor_matches(decoded["cl_2"], cls[2])
     _assert_tensor_matches(decoded["cl_0"], cls[0])
-    assert decoded["i_sobol"].dtype == tf.int64
-    assert decoded["i_signal"].dtype == tf.int64
+    assert decoded["i_sobol"].dtype == torch.int64
+    assert decoded["i_signal"].dtype == torch.int64
     assert decoded["i_sobol"].numpy() == 7
     assert decoded["i_signal"].numpy() == 11
 
@@ -130,6 +129,9 @@ def test_grid_webdataset_optional_cross_maps_are_absent_when_disabled(tmp_path):
 
 
 def _minimal_grid_pipeline(*, return_maps=True, return_cls=True, with_cross=False):
+    tf = pytest.importorskip("tensorflow")
+    from msfm.grid_pipeline import GridPipeline
+
     pipeline = GridPipeline.__new__(GridPipeline)
     pipeline.conf = {"analysis": {"grid": {"n_noise_per_signal": N_NOISE, "n_perms_per_cosmo": 1}, "n_patches": 1}}
     pipeline.params = ["Omega_m", "sigma8"]
@@ -337,7 +339,7 @@ def test_fiducial_webdataset_tar_roundtrips_arrays_dtypes_shapes_and_noise_indic
     _assert_tensor_matches(decoded["cl_Omega_m_p"], cl_perts[1][[2, 0]])
     _assert_tensor_matches(decoded[f"cl_{ia_labels[0]}"], cl_ia[0][[2, 0]])
     _assert_tensor_matches(decoded[f"cl_{bg_labels[0]}"], cl_bg[0][[2, 0]])
-    assert decoded["i_signal"].dtype == tf.int64
+    assert decoded["i_signal"].dtype == torch.int64
     assert decoded["i_signal"].numpy() == 13
 
 
