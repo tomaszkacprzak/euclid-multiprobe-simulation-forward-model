@@ -18,7 +18,6 @@ Meant for
 """
 
 import numpy as np
-import tensorflow as tf
 import webdataset as wds
 import os, argparse, warnings, time, yaml, h5py, pickle, glob, sys
 
@@ -33,7 +32,6 @@ from msfm.utils import (
     clustering,
     cosmogrid,
     postprocessing,
-    tfrecords,
     webdatasets,
     power_spectra,
     scales,
@@ -51,9 +49,10 @@ warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
 
 
-
 def setup(args):
-    description = "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tar WebDataset shards"
+    description = (
+        "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tar WebDataset shards"
+    )
     parser = argparse.ArgumentParser(description=description, add_help=True)
 
     parser.add_argument(
@@ -109,12 +108,9 @@ def setup(args):
     )
 
     parser.add_argument(
-        "--indices", 
-        type=str, 
-        default="0", 
-        help="Indices to process, format: 0,1,2,4 or start>stop. Default is 0.")
+        "--indices", type=str, default="0", help="Indices to process, format: 0,1,2,4 or start>stop. Default is 0."
+    )
 
-    
     parser.add_argument("--debug", action="store_true", help="activate debug mode")
 
     args, _ = parser.parse_known_args(args)
@@ -137,12 +133,10 @@ def setup(args):
         pass
 
     return args
-          
-
 
 
 def main(indices, args):
-    
+
     LOGGER.timer.start("main")
     LOGGER.info(f"Got index set of size {len(indices)}")
 
@@ -210,7 +204,9 @@ def main(indices, args):
     if n_cosmos % args.n_files == 0:
         n_cosmos_per_file = n_cosmos // args.n_files
         n_examples_per_file = n_examples_per_cosmo * n_cosmos_per_file
-        LOGGER.info(f"The number of files implies {n_cosmos_per_file} cosmological parameters per .tar WebDataset shard")
+        LOGGER.info(
+            f"The number of files implies {n_cosmos_per_file} cosmological parameters per .tar WebDataset shard"
+        )
     else:
         raise ValueError(
             f"The total number of cosmologies {n_cosmos} has to be evenly divisible by the number of files {args.n_files}"
@@ -267,7 +263,9 @@ def main(indices, args):
                 state_file = os.path.join(args.dir_out, f"program_state{i_cosmo:06}" + args.file_suffix + ".pkl")
 
                 i_sobol, cosmo = prior.extend_sobol_sequence(conf, cosmo_params_info, i_cosmo)
-                astro_samples = prior.sample_astro_parameters(astro_params, i_cosmo, n_examples_per_cosmo, n_noise_per_signal, astro_priors)
+                astro_samples = prior.sample_astro_parameters(
+                    astro_params, i_cosmo, n_examples_per_cosmo, n_noise_per_signal, astro_priors
+                )
                 i_sobol = int(cosmo_dir_in[-7:-1])
                 n_patches = conf["analysis"]["n_patches"]
                 n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
@@ -281,16 +279,19 @@ def main(indices, args):
                 if store_clustering:
                     samples.append("GC")
 
-                for i_perm in LOGGER.progressbar(range(n_perms_per_cosmo),
+                for i_perm in LOGGER.progressbar(
+                    range(n_perms_per_cosmo),
                     at_level="info",
                     desc="Looping through the per cosmology signal maps",
                     total=n_perms_per_cosmo,
-                ):  
-                                        
-                    LOGGER.info(f"Starting permutation {i_perm:04d}/{n_perms_per_cosmo} for cosmology {i_cosmo}/{n_cosmos_per_file} for file {wds_file}")
+                ):
+
+                    LOGGER.info(
+                        f"Starting permutation {i_perm:04d}/{n_perms_per_cosmo} for cosmology {i_cosmo}/{n_cosmos_per_file} for file {wds_file}"
+                    )
                     LOGGER.timer.start("permutation")
 
-                    rng_perm = np.random.default_rng(int(conf['master_seed']) + i_cosmo * n_perms_per_cosmo + i_perm)
+                    rng_perm = np.random.default_rng(int(conf["master_seed"]) + i_cosmo * n_perms_per_cosmo + i_perm)
 
                     full_maps_file = postprocessing._get_full_sky_perm(args, conf, cosmo_dir_in, i_perm)
                     bsc_samples = (
@@ -308,14 +309,16 @@ def main(indices, args):
                         in_map_types = conf["survey"][sample]["map_types"]["input"]
                         out_map_types = conf["survey"][sample]["map_types"]["output"]
                         z_bins = conf["survey"][sample]["z_bins"]
-                        
+
                         for in_map_type, out_map_type in zip(in_map_types, out_map_types):
                             LOGGER.info(f"Starting with map type {in_map_type} -> {out_map_type}")
                             LOGGER.timer.start("map_type")
 
                             for i_z, z_bin in enumerate(z_bins):
 
-                                full_sky_bin = postprocessing._read_full_sky_bin(conf, full_maps_file, in_map_type, z_bin)
+                                full_sky_bin = postprocessing._read_full_sky_bin(
+                                    conf, full_maps_file, in_map_type, z_bin
+                                )
 
                                 if sample == "WL":
                                     data_vecs = postprocessing.postprocess_wl_bin(
@@ -331,7 +334,7 @@ def main(indices, args):
                                         bgs_key=f"cosmo_{i_sobol:06d}",
                                         i_perm=i_perm,
                                         bsc_samples=bsc_samples,
-                                        rng=rng_perm
+                                        rng=rng_perm,
                                     )
                                 elif sample == "GC":
                                     data_vecs = postprocessing.postprocess_gc_bin(
@@ -347,10 +350,10 @@ def main(indices, args):
                                     )
 
                                 # store to temporary container
-                                container_data_vecs.setdefault(z_bin, {}) # initialize if not exists
+                                container_data_vecs.setdefault(z_bin, {})  # initialize if not exists
                                 container_data_vecs[z_bin][out_map_type] = data_vecs
 
-                        LOGGER.debug(f'i_perm={i_perm}, strting with {n_patches} patches')
+                        LOGGER.debug(f"i_perm={i_perm}, strting with {n_patches} patches")
 
                         def concat_probe_zbins(probe):
                             xs = []
@@ -364,11 +367,11 @@ def main(indices, args):
                                 LOGGER.debug(f"concat_probe_zbins: concatenating {len(xs)} z bins for probe {probe}")
                                 return np.concatenate(xs, axis=-1)
 
-                        kg_examples  = concat_probe_zbins("kg")
-                        ia_examples  = concat_probe_zbins("ia")
-                        ds_examples  = concat_probe_zbins("ds")
-                        sn_examples  = concat_probe_zbins("sn")
-                        dg_examples  = concat_probe_zbins("dg")
+                        kg_examples = concat_probe_zbins("kg")
+                        ia_examples = concat_probe_zbins("ia")
+                        ds_examples = concat_probe_zbins("ds")
+                        sn_examples = concat_probe_zbins("sn")
+                        dg_examples = concat_probe_zbins("dg")
                         qdg_examples = concat_probe_zbins("dg2")
 
                         num_processed_examples = 0
@@ -413,10 +416,10 @@ def main(indices, args):
                                     # bg1, bg2, bg3, bg4, qbg1, qbg2, qbg3, qbg4 = astro_sample[-8:]
                                     # tomo_qbg = np.array([qbg1, qbg2, qbg3, qbg4])
                                     tomo_qbg = np.array(astro_sample[-n_gc_bins:])
-                                    tomo_bg = np.array(astro_sample[-2*n_gc_bins:-n_gc_bins])
+                                    tomo_bg = np.array(astro_sample[-2 * n_gc_bins : -n_gc_bins])
                                 else:
                                     # bg1, bg2, bg3, bg4 = astro_sample[-n_gc_bins:]
-                                    # tomo_bg = np.array([bg1, bg2, bg3, bg4])    
+                                    # tomo_bg = np.array([bg1, bg2, bg3, bg4])
                                     tomo_bg = np.array(astro_sample[-n_gc_bins:])
                                     tomo_qbg = None
 
@@ -457,7 +460,9 @@ def main(indices, args):
                                         xg[:, ix] = hp.reorder(map_cross, r2n=True)[data_vec_pix]
 
                                         for k in range(n_noise_per_signal):
-                                            alm_cross_noise = np.sqrt(alm_sn_samples[k][:, i] * alm_pn_samples[k][:, j])
+                                            alm_cross_noise = np.sqrt(
+                                                alm_sn_samples[k][:, i] * alm_pn_samples[k][:, j]
+                                            )
                                             map_cross_noise = hp.alm2map(alm_cross_noise, nside=n_side, pol=False)
                                             xn_samples[k, :, ix] = hp.reorder(map_cross_noise, r2n=True)[data_vec_pix]
 
@@ -487,14 +492,17 @@ def main(indices, args):
                             )
 
                             num_processed_examples += 1
-                            LOGGER.debug(f"Writing example to {wds_file} i_perm={i_perm}, i_patch={i_patch} i_signal={i_signal} kg.shape={kg.shape}, sn_samples.shape={sn_samples.shape}, dg.shape={dg.shape}, pn_samples.shape={pn_samples.shape}")
+                            LOGGER.debug(
+                                f"Writing example to {wds_file} i_perm={i_perm}, i_patch={i_patch} i_signal={i_signal} kg.shape={kg.shape}, sn_samples.shape={sn_samples.shape}, dg.shape={dg.shape}, pn_samples.shape={pn_samples.shape}"
+                            )
                             sink.write(sample)
 
-                        LOGGER.info(f"Done with permutation {i_perm:04d} time taken {LOGGER.timer.elapsed('permutation')}")
+                        LOGGER.info(
+                            f"Done with permutation {i_perm:04d} time taken {LOGGER.timer.elapsed('permutation')}"
+                        )
 
         LOGGER.info(f"Done with index {index} after {LOGGER.timer.elapsed('index')}")
         return num_total_examples
-        
 
 
 def _data_vector_smoothing(dv, l_min, l_max, theta_fwhm, np_seed, conf, pixel_file, mask):
@@ -574,7 +582,7 @@ def _get_lensing_transform(conf, pixel_file):
             # standard NLA
             kg = kg + tomo_Aia * ia
 
-        # fixing this in the .tfrecords simplifies reproducibility
+        # fixing this in the serialized examples simplifies reproducibility
         m_bias = m_bias_dist.sample()
         kg *= 1.0 + m_bias
 
@@ -684,9 +692,6 @@ def _get_clustering_transform(conf, pixel_file):
     return clustering_transform
 
 
-
-
-
 def merge(indices, args):
     args = setup(args)
     conf = files.load_config(args.config)
@@ -697,7 +702,7 @@ def merge(indices, args):
     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     n_signal_per_cosmo = n_patches * n_perms_per_cosmo
 
-    tfr_pattern = filenames.get_filename_tfrecords(
+    wds_pattern = filenames.get_filename_webdataset(
         args.dir_out,
         tag=conf["survey"]["name"] + args.file_suffix,
         with_bary=conf["analysis"]["modelling"]["baryonified"],
@@ -705,21 +710,26 @@ def merge(indices, args):
         simset="grid",
         return_pattern=True,
     )
-    tfr_files = glob.glob(tfr_pattern)
-    tfr_files = sorted(tfr_files)
+    wds_files = sorted(glob.glob(wds_pattern))
+    if not wds_files:
+        raise FileNotFoundError(f"No WebDataset tar shards match pattern {wds_pattern!r}")
 
-    cls_dset = tf.data.Dataset.list_files(tfr_files)
-    # flat_map to not mix cosmologies
-    cls_dset = cls_dset.flat_map(tf.data.TFRecordDataset)
-    # the default arguments for parse_inverse_fiducial_cls are fine since we're not in graph mode
-    cls_dset = cls_dset.map(tfrecords.parse_inverse_grid_cls, num_parallel_calls=tf.data.AUTOTUNE)
-    # every batch is a single cosmology
-    cls_dset = cls_dset.batch(n_signal_per_cosmo)
+    def iter_cosmology_batches():
+        batch = []
+        for sample in wds.WebDataset(wds_files, shardshuffle=False):
+            batch.append(webdatasets.decode_grid_cls_sample(sample))
+            if len(batch) == n_signal_per_cosmo:
+                yield {key: np.stack([example[key].numpy() for example in batch], axis=0) for key in batch[0]}
+                batch = []
+        if batch:
+            raise ValueError(
+                f"Found an incomplete cosmology batch with {len(batch)} samples; "
+                f"expected {n_signal_per_cosmo} samples per cosmology"
+            )
 
-    # separate folder on the same level as tfrecords
+    # separate folder on the same level as WebDataset tar shards
     if args.debug:
         n_cosmos = 10
-        cls_dset = cls_dset.take(n_cosmos)
         out_dir = os.path.join(args.dir_out, "../../cls/debug")
     else:
         out_dir = os.path.join(args.dir_out, "../../cls")
@@ -728,15 +738,18 @@ def merge(indices, args):
 
     with h5py.File(os.path.join(out_dir, "grid_cls.h5"), "w") as f:
         for i, example in LOGGER.progressbar(
-            enumerate(cls_dset),
+            enumerate(iter_cosmology_batches()),
             total=n_cosmos,
-            desc="Looping through the different cosmologies in the .tfrecords",
+            desc="Looping through the different cosmologies in the WebDataset tar shards",
             at_level="info",
         ):
-            cls = example["cls"].numpy()
-            cosmo = example["cosmo"].numpy()
-            i_sobol = example["i_sobol"].numpy()
-            i_signal = example["i_signal"].numpy()
+            if i >= n_cosmos:
+                break
+
+            cls = example["cls"]
+            cosmo = example["cosmo"]
+            i_sobol = example["i_sobol"]
+            i_signal = example["i_signal"]
 
             # concatenate the noise realizations along the same axis as the examples
             cls = np.concatenate([cls[:, i, ...] for i in range(cls.shape[1])], axis=0)
@@ -749,7 +762,7 @@ def merge(indices, args):
             i_sobol = np.tile(i_sobol, n_noise_per_signal)
             i_signal = np.tile(i_signal, n_noise_per_signal)
 
-            # noise is treated separately because it's along a separate dimension in the .tfrecords. This here is preserves
+            # noise is treated separately because it's along a separate dimension in the WebDataset tar shards. This here is preserves
             # the order imposed above in power_spectrum = ...
             i_noise = np.arange(n_noise_per_signal)
             i_noise = np.repeat(i_noise, n_signal_per_cosmo)
@@ -772,6 +785,7 @@ def merge(indices, args):
             f["i_noise"][i] = i_noise
 
     LOGGER.info(f"Done with merging of the grid power spectra")
+
 
 if __name__ == "__main__":
 

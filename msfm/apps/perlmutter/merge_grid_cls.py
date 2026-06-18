@@ -4,23 +4,24 @@
 Created May 2024
 Author: Arne Thomsen
 
-Merge function from msfm/apps/run_grid_preprocessing.py since this only works if the .tfrecords stay on Euler,
+Merge function from msfm/apps/run_grid_preprocessing.py since this only works if the WebDataset tar shards stay on Euler,
 not when they are directly stored on the SAN or Perlmutter. In that case, the merge has to be run on Perlmutter later,
 like here.
 """
 
-
-import argparse, os, h5py
+import argparse, os, h5py, glob
 import numpy as np
-import tensorflow as tf
+import webdataset as wds
 
-from msfm.utils import files, logger, filenames, tfrecords, power_spectra
+from msfm.utils import files, logger, filenames, webdatasets, power_spectra
 
 LOGGER = logger.get_logger(__file__)
 
 
 def setup(args):
-    description = "Preprocess the CosmoGrid projections into forward-modeled survey footprints in .tfrecord files"
+    description = (
+        "Preprocess the CosmoGrid projections into forward-modeled survey footprints in .tar WebDataset shards"
+    )
     parser = argparse.ArgumentParser(description=description, add_help=True)
 
     parser.add_argument(
@@ -80,7 +81,7 @@ def merge(indices, args):
     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     n_signal_per_cosmo = n_patches * n_perms_per_cosmo
 
-    tfr_pattern = filenames.get_filename_tfrecords(
+    wds_pattern = filenames.get_filename_webdataset(
         args.dir_out,
         tag=conf["survey"]["name"] + args.file_suffix,
         with_bary=conf["analysis"]["modelling"]["baryonified"],
@@ -88,14 +89,22 @@ def merge(indices, args):
         simset="grid",
         return_pattern=True,
     )
+    wds_files = sorted(glob.glob(wds_pattern))
+    if not wds_files:
+        raise FileNotFoundError(f"No WebDataset tar shards match pattern {wds_pattern!r}")
 
-    cls_dset = tf.data.Dataset.list_files(tfr_pattern)
-    # flat_map to not mix cosmologies
-    cls_dset = cls_dset.flat_map(tf.data.TFRecordDataset)
-    # the default arguments for parse_inverse_fiducial_cls are fine since we're not in graph mode
-    cls_dset = cls_dset.map(tfrecords.parse_inverse_grid_cls, num_parallel_calls=tf.data.AUTOTUNE)
-    # every batch is a single cosmology
-    cls_dset = cls_dset.batch(n_signal_per_cosmo)
+    def iter_cosmology_batches():
+        batch = []
+        for sample in wds.WebDataset(wds_files, shardshuffle=False):
+            batch.append(webdatasets.decode_grid_cls_sample(sample))
+            if len(batch) == n_signal_per_cosmo:
+                yield {key: np.stack([example[key].numpy() for example in batch], axis=0) for key in batch[0]}
+                batch = []
+        if batch:
+            raise ValueError(
+                f"Found an incomplete cosmology batch with {len(batch)} samples; "
+                f"expected {n_signal_per_cosmo} samples per cosmology"
+            )
 
     cls = []
     binned_cls = []
@@ -105,12 +114,15 @@ def merge(indices, args):
     i_examples = []
     i_noises = []
     for example in LOGGER.progressbar(
-        cls_dset, total=n_cosmos, desc="Looping through the different cosmologies in the .tfrecords", at_level="info"
+        iter_cosmology_batches(),
+        total=n_cosmos,
+        desc="Looping through the different cosmologies in the WebDataset tar shards",
+        at_level="info",
     ):
-        cl = example["cls"].numpy()
-        cosmo = example["cosmo"].numpy()
-        i_sobol = example["i_sobol"].numpy()
-        i_signal = example["i_signal"].numpy()
+        cl = example["cls"]
+        cosmo = example["cosmo"]
+        i_sobol = example["i_sobol"]
+        i_signal = example["i_signal"]
 
         # concatenate the noise realizations along the same axis as the examples
         cl = np.concatenate([cl[:, i, ...] for i in range(cl.shape[1])], axis=0)
@@ -131,7 +143,7 @@ def merge(indices, args):
         i_sobol = np.tile(i_sobol, n_noise_per_signal)
         i_signal = np.tile(i_signal, n_noise_per_signal)
 
-        # noise is treated separately because it's along a separate dimension in the .tfrecords. This here is preserves
+        # noise is treated separately because it's along a separate dimension in the WebDataset tar shards. This here is preserves
         # the order imposed above in power_spectrum = ...
         i_noise = np.arange(n_noise_per_signal)
         i_noise = np.repeat(i_noise, n_signal_per_cosmo)
@@ -153,7 +165,7 @@ def merge(indices, args):
     i_examples = np.array(i_examples)
     i_noises = np.array(i_noises)
 
-    # separate folder on the same level as tfrecords
+    # separate folder on the same level as WebDataset tar shards
     if args.debug:
         out_dir = args.dir_out
     else:
