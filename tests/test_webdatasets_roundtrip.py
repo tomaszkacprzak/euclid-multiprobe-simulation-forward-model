@@ -358,3 +358,101 @@ def test_fiducial_webdataset_decode_honors_return_maps_and_return_cls(tmp_path):
     assert "kg_fiducial" not in cls_only
     assert "sn_1" not in cls_only
     assert "cl_fiducial" in cls_only
+
+
+def test_grid_webdataset_decode_can_return_pytorch_tensors(tmp_path):
+    torch = pytest.importorskip("torch")
+    shard = tmp_path / "grid-000000.tar"
+    _, (kg, sn, dg, pn, cls, cosmo, xg, xn) = _write_one_grid_shard(shard, with_cross=True)
+    sample = _read_single_sample(shard)
+
+    decoded = webdatasets.decode_grid_sample(
+        sample,
+        noise_indices=[2, 0],
+        with_cross=True,
+        return_maps=True,
+        return_cls=True,
+        tensor_backend="torch",
+    )
+
+    expected = {
+        "cosmo": cosmo,
+        "kg_2": kg + sn[2],
+        "kg_0": kg + sn[0],
+        "dg_2": dg + pn[2],
+        "dg_0": dg + pn[0],
+        "xg_2": xg + xn[2],
+        "xg_0": xg + xn[0],
+        "cl_2": cls[2],
+        "cl_0": cls[0],
+    }
+    for key, array in expected.items():
+        assert isinstance(decoded[key], torch.Tensor)
+        assert decoded[key].dtype == torch.float32
+        torch.testing.assert_close(decoded[key], torch.from_numpy(array))
+    assert decoded["i_sobol"].dtype == torch.int64
+    assert decoded["i_signal"].dtype == torch.int64
+    assert decoded["i_sobol"].item() == 7
+    assert decoded["i_signal"].item() == 11
+
+
+def test_grid_pipeline_masks_padding_and_z_bin_selection_exact_tensors():
+    pipeline = _minimal_grid_pipeline(return_maps=True, return_cls=True, with_cross=False)
+    pipeline.with_padding = False
+    pipeline.mask_total = tf.constant([True, False, True, True, False])
+    pipeline.z_bin_inds = [2, 0]
+    pipeline.masks_WL = tf.constant(
+        [[1.0, 0.0], [1.0, 1.0], [0.5, 1.0], [1.0, 1.0], [0.0, 1.0]], dtype=tf.float32
+    )
+    pipeline.masks_GC = tf.constant([[1.0], [0.0], [1.0], [0.5], [1.0]], dtype=tf.float32)
+
+    kg = tf.constant(
+        [
+            [[1.0, 10.0], [2.0, 20.0], [3.0, 30.0], [4.0, 40.0], [5.0, 50.0]],
+        ],
+        dtype=tf.float32,
+    )
+    dg = tf.constant([[[100.0], [200.0], [300.0], [400.0], [500.0]]], dtype=tf.float32)
+    cl = tf.reshape(tf.range(N_CLS * N_Z_CROSS, dtype=tf.float32), (1, N_CLS, N_Z_CROSS))
+    data_vectors = {
+        "cosmo": tf.constant([[0.125, 0.25]], dtype=tf.float32),
+        "kg": kg,
+        "dg": dg,
+        "cl": cl,
+        "i_sobol": tf.constant([7], dtype=tf.int64),
+        "i_signal": tf.constant([11], dtype=tf.int64),
+        "i_noise": tf.constant([2], dtype=tf.int64),
+    }
+
+    map_tensor, cl_tensor, cosmo_tensor, index = pipeline._augmentations(dict(data_vectors))
+
+    expected_full = tf.concat([kg * pipeline.masks_WL, dg * pipeline.masks_GC], axis=-1)
+    expected = tf.gather(tf.boolean_mask(expected_full, pipeline.mask_total, axis=1), pipeline.z_bin_inds, axis=-1)
+    tf.debugging.assert_equal(map_tensor, expected)
+    tf.debugging.assert_equal(cl_tensor, cl)
+    tf.debugging.assert_equal(cosmo_tensor, data_vectors["cosmo"])
+    for got, want in zip(index, (data_vectors["i_sobol"], data_vectors["i_signal"], data_vectors["i_noise"])):
+        tf.debugging.assert_equal(got, want)
+
+
+def test_grid_downsampling_unsorted_segment_mean_parent_indices_hand_computed():
+    dv = tf.constant(
+        [
+            [[1.0, 10.0], [3.0, 30.0], [5.0, 50.0], [7.0, 70.0]],
+            [[2.0, 20.0], [4.0, 40.0], [6.0, 60.0], [8.0, 80.0]],
+        ],
+        dtype=tf.float32,
+    )
+    parent_output_idx = tf.constant([0, 1, 0, 1], dtype=tf.int32)
+
+    dv_t = tf.transpose(dv, perm=[1, 0, 2])
+    downsampled = tf.transpose(tf.math.unsorted_segment_mean(dv_t, parent_output_idx, 2), perm=[1, 0, 2])
+
+    expected = tf.constant(
+        [
+            [[3.0, 30.0], [5.0, 50.0]],
+            [[4.0, 40.0], [6.0, 60.0]],
+        ],
+        dtype=tf.float32,
+    )
+    tf.debugging.assert_equal(downsampled, expected)

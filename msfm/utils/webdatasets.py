@@ -274,6 +274,7 @@ def _decode_data_vector(
     n_pix: Optional[int],
     n_z_bins: Optional[int],
     n_z_bins_label: str,
+    tensor_backend: str = "tensorflow",
 ) -> None:
     tensor = _to_tensor(_get_array(sample, key_in), dtype=torch.float32)
     shape = (
@@ -281,7 +282,7 @@ def _decode_data_vector(
         if n_pix is not None and n_z_bins is not None
         else (_metadata(sample, "n_pix"), _metadata(sample, n_z_bins_label))
     )
-    output[key_out] = _with_shape(tensor, shape)
+    output[key_out] = _with_shape(tensor, shape, tensor_backend=tensor_backend)
 
 
 def _decode_cls(
@@ -294,6 +295,7 @@ def _decode_cls(
     n_z_cross: Optional[int],
     noise_indices: Any,
     bin_indices: Any,
+    tensor_backend: str = "tensorflow",
 ) -> None:
     cls = _to_tensor(_get_array(sample, key_in), dtype=torch.float32)
     shape = (
@@ -374,6 +376,7 @@ def decode_grid_sample(
     with_cross=False,
     return_maps=True,
     return_cls=True,
+    tensor_backend="tensorflow",
 ):
     """Decode a WebDataset grid sample into the same output schema as ``parse_inverse_grid``."""
     noise_indices = tuple(noise_indices)
@@ -393,11 +396,13 @@ def decode_grid_sample(
     for i in noise_indices:
         if return_maps:
             if with_lensing:
-                _decode_data_vector(output, sample, f"kg_{i}", f"kg_{i}", n_pix, n_z_WL, "n_z_WL")
+                _decode_data_vector(output, sample, f"kg_{i}", f"kg_{i}", n_pix, n_z_WL, "n_z_WL", tensor_backend)
             if with_clustering:
-                _decode_data_vector(output, sample, f"dg_{i}", f"dg_{i}", n_pix, n_z_GC, "n_z_GC")
+                _decode_data_vector(output, sample, f"dg_{i}", f"dg_{i}", n_pix, n_z_GC, "n_z_GC", tensor_backend)
             if with_cross:
-                _decode_data_vector(output, sample, f"xg_{i}", f"xg_{i}", n_pix, n_z_cross_map, "n_z_cross_map")
+                _decode_data_vector(
+                    output, sample, f"xg_{i}", f"xg_{i}", n_pix, n_z_cross_map, "n_z_cross_map", tensor_backend
+                )
 
         if return_cls:
             n_z_mc = _parse_none_value(sample, "n_z_WL", n_z_WL) if with_lensing else 0
@@ -410,7 +415,9 @@ def decode_grid_sample(
                 with_cross_z=True,
                 with_cross_probe=(with_lensing and with_clustering),
             )
-            _decode_cls(output, sample, "cls", f"cl_{i}", n_noise, n_cls, n_z_cross, i, bin_indices)
+            _decode_cls(
+                output, sample, "cls", f"cl_{i}", n_noise, n_cls, n_z_cross, i, bin_indices, tensor_backend
+            )
 
     output["i_sobol"] = _to_tensor(_metadata(sample, "i_sobol"), dtype=torch.int64)
     output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=torch.int64)
