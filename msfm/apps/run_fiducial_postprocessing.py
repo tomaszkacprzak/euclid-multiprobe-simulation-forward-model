@@ -495,7 +495,7 @@ def main(indices, args):
                 n_done += 1
 
         if args.to_san:
-            postprocessing._rsync_tfrecord_to_san(conf, wds_file, san_dir_out)
+            postprocessing._rsync_webdataset_to_san(conf, wds_file, san_dir_out)
 
         LOGGER.info(f"Done with index {index} after {LOGGER.timer.elapsed('index')}")
         yield index

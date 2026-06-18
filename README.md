@@ -20,12 +20,8 @@ Requires Python >= 3.8. The primary runtime path uses PyTorch for tensors/data l
 uv pip install -e .
 ```
 
-*Legacy TFRecord utilities only*:
-```bash
-uv pip install -e .[legacy-tfrecord]
-```
+The supported preprocessing output is WebDataset `.tar` shards. TFRecord generation and loading are no longer supported.
 
-Use the optional TensorFlow extra only when TensorFlow is not already available via system modules (e.g., `module load tensorflow`) and you need legacy TFRecord utilities. The supported preprocessing output is WebDataset `.tar` shards; do not create new TFRecord outputs for the PyTorch runtime. The WebDataset runtime path does not require adding TensorFlow-only TFRecord dependencies.
 
 ## Repository Structure
 

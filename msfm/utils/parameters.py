@@ -123,7 +123,7 @@ def get_fiducial_perturbation_labels(params=None):
             ["Om", "s8", "H0", "Ob", "ns", "w0", "Aia"]
 
     Returns:
-        pert_labels: list of strings denoting the fiducial perturbations. These are used in the .tfrecord files.
+        pert_labels: list of strings denoting the fiducial perturbations used in serialized examples.
     """
     params = get_parameters(params)
 

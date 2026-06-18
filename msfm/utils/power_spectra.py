@@ -318,6 +318,3 @@ def bin_according_to_config(cls, conf):
 
     return binned_cls, bin_edges
 
-
-# Deprecated backward-compatible alias for old TFRecord preprocessing apps.
-run_tfrecords_alm_to_cl = run_alm_to_cl

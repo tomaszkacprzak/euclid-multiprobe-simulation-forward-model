@@ -56,6 +56,22 @@ def convert_to_zero_mean(m):
     return m
    
 
+
+def _rsync_webdataset_to_san(conf, wds_file, san_dir_out):
+    """Transfer a WebDataset shard to SAN storage."""
+
+    san_conf = conf["dirs"]["connections"]["san"]
+    t0_rsync = time.time()
+    with copy_guardian.BoundedSemaphore(san_conf["max_connections"], timeout=san_conf["timeout"]):
+        connection = copy_guardian.Connection(
+            host=san_conf["host"], user=san_conf["user"], private_key=san_conf["private_key"], port=22
+        )
+        connection.rsync_to(wds_file, san_dir_out)
+
+    tdelta_rsync = time.time() - t0_rsync
+    LOGGER.info(f"Rsynced {wds_file} to {san_dir_out} after {tdelta_rsync:.2f}s")
+
+
 # fiducial ############################################################################################################
 
 

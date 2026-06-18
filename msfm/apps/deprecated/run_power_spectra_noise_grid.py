@@ -153,7 +153,7 @@ def main(indices, args):
 
                 noise_alms = power_spectra.get_alms(noise_map, nest=False, datapath=hp_datapath)
                 noise_cls = power_spectra.get_cls(noise_alms, with_cross=True)
-                # because the maps in the .tfrecords get smoothed on the large scales too
+                # because the stored maps get smoothed on the large scales too
                 for j in range(noise_cls.shape[-1]):
                     noise_cls[..., j] = scales.cls_to_smoothed_cls(noise_cls[..., j], l_min=l_min)
 

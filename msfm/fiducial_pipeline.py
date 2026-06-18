@@ -17,7 +17,6 @@ from msfm.utils import logger, parameters, webdatasets
 from msfm.utils.base_pipeline import MSFMpipeline
 from msfm.grid_pipeline import _as_torch
 
-warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
@@ -75,7 +74,6 @@ class FiducialPipeline(MSFMpipeline):
         file_name_shuffle_seed: int = 17,
         examples_shuffle_seed: int = 67,
         input_context=None,
-        tfr_pattern: str = None,
     ) -> wds.WebLoader:
         """Build a WebDataset-backed PyTorch loader for fiducial samples."""
         if is_cached:
@@ -100,12 +98,7 @@ class FiducialPipeline(MSFMpipeline):
             raise TypeError("noise_indices must be an integer, list of integers or range")
 
         if pattern is None:
-            if tfr_pattern is None:
-                raise ValueError("Either pattern or the deprecated tfr_pattern alias must be provided")
-            warnings.warn("tfr_pattern is deprecated; use pattern for WebDataset shards", DeprecationWarning)
-            pattern = tfr_pattern
-        elif tfr_pattern is not None:
-            raise ValueError("Provide only one of pattern or deprecated tfr_pattern")
+            raise ValueError("pattern must be provided for WebDataset .tar shards")
 
         file_names = sorted(file_name for file_name in glob.glob(pattern) if file_name.endswith(".tar"))
         if not file_names:

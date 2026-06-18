@@ -53,11 +53,6 @@ def get_filename_webdataset(out_dir, index, tag, simset, with_bary=False, return
     return os.path.join(out_dir, fname+'.tar')
 
 
-def get_filename_tfrecords(out_dir, index, tag, simset, with_bary=False, return_pattern=False):
-    fname = get_filename_examples_name(index, tag, simset, with_bary, return_pattern)
-    return os.path.join(out_dir, fname+'.tfrecord')
-
-
 def get_filename_z_distribution(conf, data_dir, galaxy_sample_label, i_bin):
 
     if conf["survey"]["name"] == "DESy3":

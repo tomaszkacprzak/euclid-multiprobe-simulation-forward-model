@@ -11,11 +11,11 @@ by Janis Fluri
 
 import glob
 import random
+import warnings
 import numpy as np
 import torch
 from torch.utils.data import IterableDataset
 
-import warnings
 from typing import Union
 
 import webdataset as wds
@@ -23,7 +23,6 @@ import webdataset as wds
 from msfm.utils import logger, webdatasets, parameters
 from msfm.utils.base_pipeline import MSFMpipeline
 
-warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
@@ -153,7 +152,6 @@ class GridPipeline(MSFMpipeline):
         input_context=None,
         shuffle: bool = None,
         repeat: bool = None,
-        tfr_pattern: str = None,
         # nside downsampling
         downsample_nside: int = None,
         parent_output_idx=None,
@@ -238,12 +236,7 @@ class GridPipeline(MSFMpipeline):
         self.n_signal = len(signal_indices)
 
         if pattern is None:
-            if tfr_pattern is None:
-                raise ValueError("Either pattern or the deprecated tfr_pattern alias must be provided")
-            warnings.warn("tfr_pattern is deprecated; use pattern for WebDataset shards", DeprecationWarning)
-            pattern = tfr_pattern
-        elif tfr_pattern is not None:
-            raise ValueError("Provide only one of pattern or deprecated tfr_pattern")
+            raise ValueError("pattern must be provided for WebDataset .tar shards")
 
         # get the file names and dataset them
         file_names = sorted(file_name for file_name in glob.glob(pattern) if file_name.endswith(".tar"))
