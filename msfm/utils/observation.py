@@ -379,34 +379,29 @@ def forward_model_cosmogrid(
                     gamma2_full /= 1 - kappa_full
 
                 if noisy:
-                    import tensorflow as tf
-                    import tensorflow_probability as tfp
+                    import torch
 
-                    tf.random.set_seed(noise_seed)
+                    noise_generator = torch.Generator(device="cpu")
+                    noise_generator.manual_seed(int(noise_seed) + i_z)
 
-                    with tf.device("/CPU:0"):
-                        gamma_cat = tomo_gamma_cat[i_z]
-                        gamma_abs = tf.math.abs(gamma_cat[:, 0] + 1j * gamma_cat[:, 1])
-                        w = gamma_cat[:, 2]
+                    gamma_cat = tomo_gamma_cat[i_z]
+                    gamma_abs = np.abs(gamma_cat[:, 0] + 1j * gamma_cat[:, 1])
+                    w = gamma_cat[:, 2]
 
-                        if sc_mode in ["fixed", "prior"]:
-                            counts = counts_map[cutout_patch_pix, i_z]
-
-                            # create joint distribution, as this is faster than random indexing
-                            cat_dist = tfp.distributions.Empirical(
-                                samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1
-                            )
-
-                            gamma1_noise, gamma2_noise = lensing.noise_gen(counts, cat_dist, n_noise_per_signal=1)
-                            gamma1_noise = gamma1_noise[:, 0]
-                            gamma2_noise = gamma2_noise[:, 0]
-                        else:
-                            pix_cat = gamma_cat[:, 3]
-                            gamma1_noise, gamma2_noise = lensing.noise_gen_in_place(
-                                gamma_abs, w, pix_cat, patch_pix, n_pix, n_noise_per_signal=1
-                            )
-                            gamma1_noise = gamma1_noise[:, 0]
-                            gamma2_noise = gamma2_noise[:, 0]
+                    if sc_mode in ["fixed", "prior"]:
+                        counts = counts_map[cutout_patch_pix, i_z]
+                        gamma1_noise, gamma2_noise = lensing.noise_gen(
+                            counts, gamma_abs, w, n_noise_per_signal=1, rng=noise_generator
+                        )
+                        gamma1_noise = gamma1_noise[:, 0]
+                        gamma2_noise = gamma2_noise[:, 0]
+                    else:
+                        pix_cat = gamma_cat[:, 3]
+                        gamma1_noise, gamma2_noise = lensing.noise_gen_in_place(
+                            gamma_abs, w, pix_cat, patch_pix, n_pix, n_noise_per_signal=1, rng=noise_generator
+                        )
+                        gamma1_noise = gamma1_noise[:, 0]
+                        gamma2_noise = gamma2_noise[:, 0]
                 else:
                     gamma1_noise = 0
                     gamma2_noise = 0
@@ -554,10 +549,7 @@ def forward_model_cosmogrid(
 
 
 def make_shape_noise_map(wl_counts_map, conf, source_clustering="fixed", noise_seed=12):
-    import tensorflow as tf
-    import tensorflow_probability as tfp
-
-    tf.random.set_seed(noise_seed)
+    import torch
 
     # constants
     n_pix = hp.nside2npix(conf["analysis"]["n_side"])
@@ -570,26 +562,29 @@ def make_shape_noise_map(wl_counts_map, conf, source_clustering="fixed", noise_s
     for i in range(wl_counts_map.shape[-1]):
         patch_pix = patches_pix_dict["metacal"][i][0]
 
-        with tf.device("/CPU:0"):
-            counts = wl_counts_map[patch_pix, i]
+        noise_generator = torch.Generator(device="cpu")
+        noise_generator.manual_seed(int(noise_seed) + i)
 
-            gamma_abs = tf.math.abs(tomo_gamma_cat[i][:, 0] + 1j * tomo_gamma_cat[i][:, 1])
-            w = tomo_gamma_cat[i][:, 2]
+        counts = wl_counts_map[patch_pix, i]
 
-            if source_clustering in ["fixed", "prior"]:
-                # create joint distribution, as this is faster than random indexing
-                cat_dist = tfp.distributions.Empirical(samples=tf.stack([gamma_abs, w], axis=-1), event_ndims=1)
+        gamma_abs = np.abs(tomo_gamma_cat[i][:, 0] + 1j * tomo_gamma_cat[i][:, 1])
+        w = tomo_gamma_cat[i][:, 2]
 
-                gamma1_noise, gamma2_noise = lensing.noise_gen(counts, cat_dist, n_noise_per_signal=1)
-            elif source_clustering == "rotate":
-                pix_cat = tomo_gamma_cat[i][:, 3]
-                gamma1_noise, gamma2_noise = lensing.noise_gen_in_place(gamma_abs, w, pix_cat, patch_pix, n_pix, 1)
-            else:
-                raise ValueError(f"Unknown source clustering mode {source_clustering}")
+        if source_clustering in ["fixed", "prior"]:
+            gamma1_noise, gamma2_noise = lensing.noise_gen(
+                counts, gamma_abs, w, n_noise_per_signal=1, rng=noise_generator
+            )
+        elif source_clustering == "rotate":
+            pix_cat = tomo_gamma_cat[i][:, 3]
+            gamma1_noise, gamma2_noise = lensing.noise_gen_in_place(
+                gamma_abs, w, pix_cat, patch_pix, n_pix, 1, rng=noise_generator
+            )
+        else:
+            raise ValueError(f"Unknown source clustering mode {source_clustering}")
 
-            # only take the first noise realization
-            gamma1_noise = gamma1_noise[:, 0]
-            gamma2_noise = gamma2_noise[:, 0]
+        # only take the first noise realization
+        gamma1_noise = gamma1_noise[:, 0]
+        gamma2_noise = gamma2_noise[:, 0]
 
         gamma1_patch = np.zeros(n_pix, dtype=np.float32)
         gamma1_patch[patch_pix] = gamma1_noise
