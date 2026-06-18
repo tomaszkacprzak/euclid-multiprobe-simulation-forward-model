@@ -11,7 +11,7 @@ import io
 from typing import Any, Dict, Mapping, MutableMapping, Optional, Sequence
 
 import numpy as np
-import tensorflow as tf
+import torch
 
 from msfm.utils import cross_statistics, logger
 
@@ -217,12 +217,12 @@ def _get_array(sample: Mapping[str, Any], key: str, *, dtype: Optional[Any] = No
     return array
 
 
-def _to_tensor(value: Any, *, dtype: Optional[Any] = None) -> tf.Tensor:
-    return tf.convert_to_tensor(value, dtype=dtype)
+def _to_tensor(value: Any, *, dtype: Optional[Any] = None) -> torch.Tensor:
+    return torch.as_tensor(value, dtype=dtype)
 
 
 def _to_int(value: Any) -> int:
-    if isinstance(value, tf.Tensor):
+    if isinstance(value, torch.Tensor):
         value = value.numpy()
     if isinstance(value, np.ndarray):
         value = value.item()
@@ -248,14 +248,26 @@ def _parse_none_value(sample: Mapping[str, Any], key: str, value: Optional[int])
     return _metadata(sample, key) if value is None else value
 
 
-def _with_shape(tensor: tf.Tensor, shape: Sequence[Optional[int]]) -> tf.Tensor:
+def _with_shape(tensor: torch.Tensor, shape: Sequence[Optional[int]]) -> torch.Tensor:
     if all(dim is not None for dim in shape):
-        return tf.ensure_shape(tensor, shape=shape)
-    return tf.reshape(tensor, shape=shape)
+        expected = tuple(int(dim) for dim in shape if dim is not None)
+        if tuple(tensor.shape) != expected:
+            raise ValueError(f"expected tensor shape {expected}, got {tuple(tensor.shape)}")
+        return tensor
+
+    reshape_shape = tuple(-1 if dim is None else int(dim) for dim in shape)
+    return tensor.reshape(reshape_shape)
+
+
+def _gather_axis(tensor: torch.Tensor, indices: Any, axis: int) -> torch.Tensor:
+    if isinstance(indices, (int, np.integer)):
+        return tensor.select(axis, int(indices))
+    index_tensor = torch.as_tensor(indices, dtype=torch.int64, device=tensor.device)
+    return torch.index_select(tensor, axis, index_tensor.reshape(-1))
 
 
 def _decode_data_vector(
-    output: MutableMapping[str, tf.Tensor],
+    output: MutableMapping[str, torch.Tensor],
     sample: Mapping[str, Any],
     key_in: str,
     key_out: str,
@@ -263,7 +275,7 @@ def _decode_data_vector(
     n_z_bins: Optional[int],
     n_z_bins_label: str,
 ) -> None:
-    tensor = _to_tensor(_get_array(sample, key_in), dtype=tf.float32)
+    tensor = _to_tensor(_get_array(sample, key_in), dtype=torch.float32)
     shape = (
         (n_pix, n_z_bins)
         if n_pix is not None and n_z_bins is not None
@@ -273,7 +285,7 @@ def _decode_data_vector(
 
 
 def _decode_cls(
-    output: MutableMapping[str, tf.Tensor],
+    output: MutableMapping[str, torch.Tensor],
     sample: Mapping[str, Any],
     key_in: str,
     key_out: str,
@@ -283,15 +295,15 @@ def _decode_cls(
     noise_indices: Any,
     bin_indices: Any,
 ) -> None:
-    cls = _to_tensor(_get_array(sample, key_in), dtype=tf.float32)
-    if n_noise is None and n_cls is None and n_z_cross is None:
-        cls = tf.reshape(
-            cls, shape=(_metadata(sample, "n_noise"), _metadata(sample, "n_cls"), _metadata(sample, "n_z_cross"))
-        )
-    else:
-        cls = tf.ensure_shape(cls, shape=(n_noise, n_cls, n_z_cross))
-    cls = tf.gather(cls, noise_indices, axis=0)
-    cls = tf.gather(cls, bin_indices, axis=-1)
+    cls = _to_tensor(_get_array(sample, key_in), dtype=torch.float32)
+    shape = (
+        (_metadata(sample, "n_noise"), _metadata(sample, "n_cls"), _metadata(sample, "n_z_cross"))
+        if n_noise is None and n_cls is None and n_z_cross is None
+        else (n_noise, n_cls, n_z_cross)
+    )
+    cls = _with_shape(cls, shape)
+    cls = _gather_axis(cls, noise_indices, axis=0)
+    cls = _gather_axis(cls, bin_indices, axis=-1)
     output[key_out] = cls
 
 
@@ -375,7 +387,7 @@ def decode_grid_sample(
         return_cls=return_cls,
     )
     output = {}
-    cosmo = _to_tensor(_get_array(sample, "cosmo"), dtype=tf.float32)
+    cosmo = _to_tensor(_get_array(sample, "cosmo"), dtype=torch.float32)
     output["cosmo"] = _with_shape(cosmo, (_metadata(sample, "n_params"),) if n_params is None else (n_params,))
 
     for i in noise_indices:
@@ -400,8 +412,8 @@ def decode_grid_sample(
             )
             _decode_cls(output, sample, "cls", f"cl_{i}", n_noise, n_cls, n_z_cross, i, bin_indices)
 
-    output["i_sobol"] = _to_tensor(_metadata(sample, "i_sobol"), dtype=tf.int64)
-    output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=tf.int64)
+    output["i_sobol"] = _to_tensor(_metadata(sample, "i_sobol"), dtype=torch.int64)
+    output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=torch.int64)
     return output
 
 
@@ -409,16 +421,17 @@ def decode_grid_cls_sample(sample, n_noise=None, n_cls=None, n_z_cross=None, n_p
     """Decode only the grid power-spectrum fields, matching ``parse_inverse_grid_cls``."""
     validate_grid_sample(sample, return_maps=False, return_cls=True)
     output = {}
-    cls = _to_tensor(_get_array(sample, "cls"), dtype=tf.float32)
-    output["cls"] = (
-        tf.reshape(cls, (_metadata(sample, "n_noise"), _metadata(sample, "n_cls"), _metadata(sample, "n_z_cross")))
+    cls = _to_tensor(_get_array(sample, "cls"), dtype=torch.float32)
+    output["cls"] = _with_shape(
+        cls,
+        (_metadata(sample, "n_noise"), _metadata(sample, "n_cls"), _metadata(sample, "n_z_cross"))
         if n_noise is None and n_cls is None and n_z_cross is None
-        else tf.ensure_shape(cls, (n_noise, n_cls, n_z_cross))
+        else (n_noise, n_cls, n_z_cross),
     )
-    cosmo = _to_tensor(_get_array(sample, "cosmo"), dtype=tf.float32)
+    cosmo = _to_tensor(_get_array(sample, "cosmo"), dtype=torch.float32)
     output["cosmo"] = _with_shape(cosmo, (_metadata(sample, "n_params"),) if n_params is None else (n_params,))
-    output["i_sobol"] = _to_tensor(_metadata(sample, "i_sobol"), dtype=tf.int64)
-    output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=tf.int64)
+    output["i_sobol"] = _to_tensor(_metadata(sample, "i_sobol"), dtype=torch.int64)
+    output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=torch.int64)
     return output
 
 
@@ -532,7 +545,7 @@ def decode_fiducial_sample(
             if with_clustering:
                 _decode_data_vector(output, sample, f"pn_{i}", f"pn_{i}", n_pix, n_z_GC, "n_z_GC")
 
-    output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=tf.int64)
+    output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=torch.int64)
     return output
 
 
@@ -541,13 +554,14 @@ def decode_fiducial_cls_sample(sample, n_noise=None, n_cls=None, n_z_cross=None)
     validate_fiducial_sample(sample, return_maps=False, return_cls=False)
     _raise_invalid_sample("fiducial", (), _missing_array_keys(sample, (CLS_KEY,)))
     output = {}
-    cls = _to_tensor(_get_array(sample, "cls"), dtype=tf.float32)
-    output["cls"] = (
-        tf.reshape(cls, (_metadata(sample, "n_noise"), _metadata(sample, "n_cls"), _metadata(sample, "n_z_cross")))
+    cls = _to_tensor(_get_array(sample, "cls"), dtype=torch.float32)
+    output["cls"] = _with_shape(
+        cls,
+        (_metadata(sample, "n_noise"), _metadata(sample, "n_cls"), _metadata(sample, "n_z_cross"))
         if n_noise is None and n_cls is None and n_z_cross is None
-        else tf.ensure_shape(cls, (n_noise, n_cls, n_z_cross))
+        else (n_noise, n_cls, n_z_cross),
     )
-    output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=tf.int64)
+    output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=torch.int64)
     return output
 
 
