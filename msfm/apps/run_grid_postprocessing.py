@@ -19,7 +19,7 @@ Meant for
 
 import numpy as np
 import webdataset as wds
-import os, argparse, warnings, time, yaml, h5py, pickle, glob, sys, itertools
+import os, argparse, warnings, time, yaml, h5py, pickle, glob, sys
 
 
 from msfm.utils import (
@@ -49,19 +49,6 @@ warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
 
 
-<<<<<<< HEAD
-def _batched(samples, batch_size):
-    """Yield dictionaries of WebDataset examples stacked into cosmology batches."""
-    iterator = iter(samples)
-    while True:
-        batch = list(itertools.islice(iterator, batch_size))
-        if not batch:
-            break
-        yield {key: np.stack([sample[key].numpy() for sample in batch], axis=0) for key in batch[0]}
-
-
-=======
->>>>>>> torch-rewrite
 def setup(args):
     description = (
         "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tar WebDataset shards"
@@ -595,11 +582,7 @@ def _get_lensing_transform(conf, pixel_file):
             # standard NLA
             kg = kg + tomo_Aia * ia
 
-<<<<<<< HEAD
-        # fixing this in the WebDataset shards simplifies reproducibility
-=======
-        # fixing this in the serialized examples simplifies reproducibility
->>>>>>> torch-rewrite
+        # fixing this in the WebDataset tar shards simplifies reproducibility
         m_bias = m_bias_dist.sample()
         kg *= 1.0 + m_bias
 
@@ -719,11 +702,7 @@ def merge(indices, args):
     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     n_signal_per_cosmo = n_patches * n_perms_per_cosmo
 
-<<<<<<< HEAD
-    webdataset_pattern = filenames.get_filename_webdataset(
-=======
     wds_pattern = filenames.get_filename_webdataset(
->>>>>>> torch-rewrite
         args.dir_out,
         tag=conf["survey"]["name"] + args.file_suffix,
         with_bary=conf["analysis"]["modelling"]["baryonified"],
@@ -731,17 +710,6 @@ def merge(indices, args):
         simset="grid",
         return_pattern=True,
     )
-<<<<<<< HEAD
-    webdataset_files = sorted(glob.glob(webdataset_pattern))
-
-    cls_samples = (webdatasets.decode_grid_cls_sample(sample) for sample in wds.WebDataset(webdataset_files, shardshuffle=False))
-    cls_dset = _batched(cls_samples, n_signal_per_cosmo)
-
-    # separate folder on the same level as WebDataset shards
-    if args.debug:
-        n_cosmos = 10
-        cls_dset = itertools.islice(cls_dset, n_cosmos)
-=======
     wds_files = sorted(glob.glob(wds_pattern))
     if not wds_files:
         raise FileNotFoundError(f"No WebDataset tar shards match pattern {wds_pattern!r}")
@@ -762,7 +730,6 @@ def merge(indices, args):
     # separate folder on the same level as WebDataset tar shards
     if args.debug:
         n_cosmos = 10
->>>>>>> torch-rewrite
         out_dir = os.path.join(args.dir_out, "../../cls/debug")
     else:
         out_dir = os.path.join(args.dir_out, "../../cls")
@@ -773,18 +740,12 @@ def merge(indices, args):
         for i, example in LOGGER.progressbar(
             enumerate(iter_cosmology_batches()),
             total=n_cosmos,
-<<<<<<< HEAD
-            desc="Looping through the different cosmologies in the WebDataset shards",
-            at_level="info",
-        ):
-=======
             desc="Looping through the different cosmologies in the WebDataset tar shards",
             at_level="info",
         ):
             if i >= n_cosmos:
                 break
 
->>>>>>> torch-rewrite
             cls = example["cls"]
             cosmo = example["cosmo"]
             i_sobol = example["i_sobol"]
@@ -801,11 +762,7 @@ def merge(indices, args):
             i_sobol = np.tile(i_sobol, n_noise_per_signal)
             i_signal = np.tile(i_signal, n_noise_per_signal)
 
-<<<<<<< HEAD
-            # noise is treated separately because it's along a separate dimension in the WebDataset shards. This here preserves
-=======
-            # noise is treated separately because it's along a separate dimension in the WebDataset tar shards. This here is preserves
->>>>>>> torch-rewrite
+            # noise is treated separately because it's along a separate dimension in the WebDataset tar shards. This preserves
             # the order imposed above in power_spectrum = ...
             i_noise = np.arange(n_noise_per_signal)
             i_noise = np.repeat(i_noise, n_signal_per_cosmo)
