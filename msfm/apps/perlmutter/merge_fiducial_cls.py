@@ -4,24 +4,24 @@
 Created May 2024
 Author: Arne Thomsen
 
-Merge function from msfm/apps/run_fiducial_preprocessing.py since this only works if the .tfrecords stay on Euler,
+Merge function from msfm/apps/run_fiducial_preprocessing.py since this only works if the WebDataset tar shards stay on Euler,
 not when they are directly stored on the SAN or Perlmutter. In that case, the merge has to be run on Perlmutter later,
 like here.
 """
 
-
-import argparse, os, h5py
+import argparse, os, h5py, glob
 import numpy as np
-import tensorflow as tf
+import webdataset as wds
 
-from msfm.utils import files, logger, filenames, tfrecords, power_spectra
-
+from msfm.utils import files, logger, filenames, webdatasets, power_spectra
 
 LOGGER = logger.get_logger(__file__)
 
 
 def setup(args):
-    description = "Preprocess the CosmoGrid projections into forward-modeled survey footprints in .tfrecord files"
+    description = (
+        "Preprocess the CosmoGrid projections into forward-modeled survey footprints in .tar WebDataset shards"
+    )
     parser = argparse.ArgumentParser(description=description, add_help=True)
 
     parser.add_argument(
@@ -80,7 +80,7 @@ def merge(indices, args):
     n_perms_per_cosmo = conf["analysis"]["fiducial"]["n_perms_per_cosmo"]
     n_examples = n_patches * n_perms_per_cosmo
 
-    tfr_pattern = filenames.get_filename_tfrecords(
+    wds_pattern = filenames.get_filename_webdataset(
         args.dir_out,
         tag=conf["survey"]["name"] + args.file_suffix,
         index=None,
@@ -88,22 +88,27 @@ def merge(indices, args):
         with_bary=conf["analysis"]["modelling"]["baryonified"],
         return_pattern=True,
     )
+    wds_files = sorted(glob.glob(wds_pattern))
+    if not wds_files:
+        raise FileNotFoundError(f"No WebDataset tar shards match pattern {wds_pattern!r}")
 
-    cls_dset = tf.data.Dataset.list_files(tfr_pattern)
-    cls_dset = cls_dset.interleave(tf.data.TFRecordDataset, cycle_length=16, block_length=1)
-    # the default arguments for parse_inverse_fiducial_cls are fine since we're not in graph mode
-    cls_dset = cls_dset.map(tfrecords.parse_inverse_fiducial_cls)
+    cls_dset = (
+        webdatasets.decode_fiducial_cls_sample(sample) for sample in wds.WebDataset(wds_files, shardshuffle=False)
+    )
 
     cls = []
     i_examples = []
     for example in LOGGER.progressbar(
-        cls_dset, total=n_examples, desc="Looping through the .tfrecords", at_level="info"
+        cls_dset, total=n_examples, desc="Looping through the WebDataset tar shards", at_level="info"
     ):
         cls.append(example["cls"].numpy())
         i_examples.append(int(example["i_signal"]))
 
+    if not cls:
+        raise ValueError("No cls samples were read from the WebDataset tar shards")
+
     # noise realizations
-    n_noise = example["cls"].numpy().shape[0]
+    n_noise = cls[0].shape[0]
     i_noise = np.arange(n_noise)
     i_noise = np.tile(i_noise, n_examples)
 
@@ -132,7 +137,7 @@ def merge(indices, args):
         with_cross=True,
     )
 
-    # separate folder on the same level as tfrecords
+    # separate folder on the same level as WebDataset tar shards
     if args.debug:
         out_dir = args.dir_out
     else:
