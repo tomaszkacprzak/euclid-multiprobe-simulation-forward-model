@@ -4,6 +4,8 @@
 Created December 2022
 Author: Arne Thomsen
 
+DEPRECATED legacy TFRecord utility. Active preprocessing should write WebDataset `.tar` shards.
+
 Convert the .h5 files containing the lensing and clustering maps to ordered .tfrecord files suitable for evaluation
 of summary statistics.
 
@@ -17,7 +19,6 @@ by Janis Fluri
 """
 
 import numpy as np
-import tensorflow as tf
 import os, argparse, warnings, h5py
 
 from sobol_seq import i4_sobol
@@ -73,7 +74,7 @@ def setup(args):
         "--dir_out",
         type=str,
         default="/pscratch/sd/a/athomsen/DESY3/grid",
-        help="output root dir of the .tfrecords",
+        help="legacy output root dir of the .tfrecords; active preprocessing should write WebDataset .tar shards",
     )
     parser.add_argument(
         "--config",
@@ -105,6 +106,7 @@ def setup(args):
 
 
 def main(indices, args):
+    tf = tfrecords.require_tensorflow()
     args = setup(args)
 
     LOGGER.timer.start("main")
