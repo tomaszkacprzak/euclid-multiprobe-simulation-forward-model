@@ -1,3 +1,4 @@
+# Deprecated TFRecord pipeline: retained for legacy runs; active pipelines use WebDataset shards.
 # this is meant for Perlmutter, not Euler
 
 # postprocessing

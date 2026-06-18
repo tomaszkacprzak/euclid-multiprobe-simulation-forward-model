@@ -1,3 +1,4 @@
+# Deprecated TFRecord pipeline: retained for legacy runs; active pipelines use WebDataset shards.
 # debug
 
 esub ../../msfm/apps/run_grid_postprocessing.py \

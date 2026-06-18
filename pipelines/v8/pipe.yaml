@@ -1,3 +1,4 @@
+# Deprecated TFRecord pipeline: retained for legacy runs; active pipelines use WebDataset shards.
 # preprocessing
 - name: fiducial_tfrecords
   cmd: esub msfm/apps/run_fiducial_preprocessing.py \

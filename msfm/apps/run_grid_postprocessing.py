@@ -18,9 +18,8 @@ Meant for
 """
 
 import numpy as np
-import tensorflow as tf
 import webdataset as wds
-import os, argparse, warnings, time, yaml, h5py, pickle, glob, sys
+import os, argparse, warnings, time, yaml, h5py, pickle, glob, sys, itertools
 
 
 from msfm.utils import (
@@ -33,7 +32,6 @@ from msfm.utils import (
     clustering,
     cosmogrid,
     postprocessing,
-    tfrecords,
     webdatasets,
     power_spectra,
     scales,
@@ -50,6 +48,15 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
 
+
+def _batched(samples, batch_size):
+    """Yield dictionaries of WebDataset examples stacked into cosmology batches."""
+    iterator = iter(samples)
+    while True:
+        batch = list(itertools.islice(iterator, batch_size))
+        if not batch:
+            break
+        yield {key: np.stack([sample[key].numpy() for sample in batch], axis=0) for key in batch[0]}
 
 
 def setup(args):
@@ -464,7 +471,7 @@ def main(indices, args):
                                         ix += 1
 
                             # power spectra
-                            cls = power_spectra.run_tfrecords_alm_to_cl(alm_kg, alm_sn_samples, alm_dg, alm_pn_samples)
+                            cls = power_spectra.run_alm_to_cl(alm_kg, alm_sn_samples, alm_dg, alm_pn_samples)
 
                             sample = webdatasets.encode_grid_sample(
                                 kg, sn_samples, dg, pn_samples, cls, cosmo_sample, i_sobol, i_signal, xg, xn_samples
@@ -574,7 +581,7 @@ def _get_lensing_transform(conf, pixel_file):
             # standard NLA
             kg = kg + tomo_Aia * ia
 
-        # fixing this in the .tfrecords simplifies reproducibility
+        # fixing this in the WebDataset shards simplifies reproducibility
         m_bias = m_bias_dist.sample()
         kg *= 1.0 + m_bias
 
@@ -697,7 +704,7 @@ def merge(indices, args):
     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     n_signal_per_cosmo = n_patches * n_perms_per_cosmo
 
-    tfr_pattern = filenames.get_filename_tfrecords(
+    webdataset_pattern = filenames.get_filename_webdataset(
         args.dir_out,
         tag=conf["survey"]["name"] + args.file_suffix,
         with_bary=conf["analysis"]["modelling"]["baryonified"],
@@ -705,21 +712,15 @@ def merge(indices, args):
         simset="grid",
         return_pattern=True,
     )
-    tfr_files = glob.glob(tfr_pattern)
-    tfr_files = sorted(tfr_files)
+    webdataset_files = sorted(glob.glob(webdataset_pattern))
 
-    cls_dset = tf.data.Dataset.list_files(tfr_files)
-    # flat_map to not mix cosmologies
-    cls_dset = cls_dset.flat_map(tf.data.TFRecordDataset)
-    # the default arguments for parse_inverse_fiducial_cls are fine since we're not in graph mode
-    cls_dset = cls_dset.map(tfrecords.parse_inverse_grid_cls, num_parallel_calls=tf.data.AUTOTUNE)
-    # every batch is a single cosmology
-    cls_dset = cls_dset.batch(n_signal_per_cosmo)
+    cls_samples = (webdatasets.decode_grid_cls_sample(sample) for sample in wds.WebDataset(webdataset_files, shardshuffle=False))
+    cls_dset = _batched(cls_samples, n_signal_per_cosmo)
 
-    # separate folder on the same level as tfrecords
+    # separate folder on the same level as WebDataset shards
     if args.debug:
         n_cosmos = 10
-        cls_dset = cls_dset.take(n_cosmos)
+        cls_dset = itertools.islice(cls_dset, n_cosmos)
         out_dir = os.path.join(args.dir_out, "../../cls/debug")
     else:
         out_dir = os.path.join(args.dir_out, "../../cls")
@@ -730,13 +731,13 @@ def merge(indices, args):
         for i, example in LOGGER.progressbar(
             enumerate(cls_dset),
             total=n_cosmos,
-            desc="Looping through the different cosmologies in the .tfrecords",
+            desc="Looping through the different cosmologies in the WebDataset shards",
             at_level="info",
         ):
-            cls = example["cls"].numpy()
-            cosmo = example["cosmo"].numpy()
-            i_sobol = example["i_sobol"].numpy()
-            i_signal = example["i_signal"].numpy()
+            cls = example["cls"]
+            cosmo = example["cosmo"]
+            i_sobol = example["i_sobol"]
+            i_signal = example["i_signal"]
 
             # concatenate the noise realizations along the same axis as the examples
             cls = np.concatenate([cls[:, i, ...] for i in range(cls.shape[1])], axis=0)
@@ -749,7 +750,7 @@ def merge(indices, args):
             i_sobol = np.tile(i_sobol, n_noise_per_signal)
             i_signal = np.tile(i_signal, n_noise_per_signal)
 
-            # noise is treated separately because it's along a separate dimension in the .tfrecords. This here is preserves
+            # noise is treated separately because it's along a separate dimension in the WebDataset shards. This here preserves
             # the order imposed above in power_spectrum = ...
             i_noise = np.arange(n_noise_per_signal)
             i_noise = np.repeat(i_noise, n_signal_per_cosmo)

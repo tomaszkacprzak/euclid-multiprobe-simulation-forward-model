@@ -20,7 +20,7 @@ Meant for
 import numpy as np
 import tensorflow as tf
 import webdataset as wds
-import os, argparse, warnings, time, yaml, h5py, pickle
+import os, argparse, warnings, time, yaml, h5py, pickle, glob, itertools
 
 from msfm.utils import (
     logger,
@@ -31,7 +31,6 @@ from msfm.utils import (
     clustering,
     cosmogrid,
     postprocessing,
-    tfrecords,
     webdatasets,
     power_spectra,
     scales,
@@ -426,7 +425,7 @@ def main(indices, args):
                                     ia_perts[i_patch, i_ia], alm_ia = lensing_transform(
                                         kg_in, ia_in, ia_label=ia_pert_label, np_seed=i_signal
                                     )
-                                    cl_ia_perts[i_patch, i_ia] = power_spectra.run_tfrecords_alm_to_cl(
+                                    cl_ia_perts[i_patch, i_ia] = power_spectra.run_alm_to_cl(
                                         alm_ia, alm_sn, alm_dg, alm_pn
                                     )
 
@@ -435,7 +434,7 @@ def main(indices, args):
                                     bg_perts[i_patch, i_bg], alm_bg = clustering_transform(
                                         dg_in, dg2_in, bg_label=bg_pert_label, np_seed=i_signal
                                     )
-                                    cl_bg_perts[i_patch, i_bg] = power_spectra.run_tfrecords_alm_to_cl(
+                                    cl_bg_perts[i_patch, i_bg] = power_spectra.run_alm_to_cl(
                                         alm_kg, alm_sn, alm_bg, alm_pn
                                     )
 
@@ -446,7 +445,7 @@ def main(indices, args):
 
                             kg_perts[i_patch, i_cosmo] = kg
                             dg_perts[i_patch, i_cosmo] = dg
-                            cl_perts[i_patch, i_cosmo] = power_spectra.run_tfrecords_alm_to_cl(
+                            cl_perts[i_patch, i_cosmo] = power_spectra.run_alm_to_cl(
                                 alm_kg, all_alm_sn[i_patch], alm_dg, all_alm_pn[i_patch]
                             )
 
@@ -757,7 +756,7 @@ def merge(indices, args):
     n_perms_per_cosmo = conf["analysis"]["fiducial"]["n_perms_per_cosmo"]
     n_examples = n_patches * n_perms_per_cosmo
 
-    tfr_pattern = filenames.get_filename_tfrecords(
+    webdataset_pattern = filenames.get_filename_webdataset(
         args.dir_out,
         tag=conf["survey"]["name"] + args.file_suffix,
         index=None,
@@ -765,18 +764,16 @@ def merge(indices, args):
         with_bary=conf["analysis"]["modelling"]["baryonified"],
         return_pattern=True,
     )
+    webdataset_files = sorted(glob.glob(webdataset_pattern))
 
-    cls_dset = tf.data.Dataset.list_files(tfr_pattern)
-    cls_dset = cls_dset.interleave(tf.data.TFRecordDataset, cycle_length=16, block_length=1)
-    # the default arguments for parse_inverse_fiducial_cls are fine since we're not in graph mode
-    cls_dset = cls_dset.map(tfrecords.parse_inverse_fiducial_cls)
+    cls_samples = (webdatasets.decode_fiducial_cls_sample(sample) for sample in wds.WebDataset(webdataset_files, shardshuffle=False))
     if args.debug:
-        cls_dset = cls_dset.take(10)
+        cls_samples = itertools.islice(cls_samples, 10)
 
     cls = []
     i_examples = []
     for example in LOGGER.progressbar(
-        cls_dset, total=n_examples, desc="Looping through the .tfrecords", at_level="info"
+        cls_samples, total=n_examples, desc="Looping through the WebDataset shards", at_level="info"
     ):
         cls.append(example["cls"].numpy())
         i_examples.append(int(example["i_signal"]))
@@ -803,7 +800,7 @@ def merge(indices, args):
     # perform the binning (all examples at the same time)
     binned_cls, bin_edges = power_spectra.bin_according_to_config(cls, conf)
 
-    # separate folder on the same level as tfrecords
+    # separate folder on the same level as WebDataset shards
     if args.debug:
         out_dir = os.path.join(args.dir_out, "../../cls/debug")
     else:
