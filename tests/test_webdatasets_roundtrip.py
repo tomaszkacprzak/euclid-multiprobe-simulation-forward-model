@@ -152,15 +152,15 @@ def _minimal_grid_pipeline(*, return_maps=True, return_cls=True, with_cross=Fals
     pipeline.apply_norm = False
     pipeline.with_padding = True
     pipeline.z_bin_inds = None
-    pipeline.masks_WL = tf.ones((N_PIX, N_Z_WL), dtype=tf.float32)
-    pipeline.masks_GC = tf.ones((N_PIX, N_Z_GC), dtype=tf.float32)
+    pipeline.masks_WL = torch.ones((N_PIX, N_Z_WL), dtype=torch.float32)
+    pipeline.masks_GC = torch.ones((N_PIX, N_Z_GC), dtype=torch.float32)
     pipeline.normalize_lensing = lambda value: value
     pipeline.normalize_clustering = lambda value: value
     return pipeline
 
 
 @pytest.mark.parametrize("return_maps,return_cls", [(True, True), (True, False), (False, True)])
-def test_grid_pipeline_loader_returns_torch_tensor_dict_for_maps_cls_and_indices(tmp_path, return_maps, return_cls):
+def test_grid_pipeline_loader_returns_torch_tensors_for_maps_cls_and_indices(tmp_path, return_maps, return_cls):
     shard = tmp_path / "grid-000000.tar"
     _write_one_grid_shard(shard, with_cross=False)
     pipeline = _minimal_grid_pipeline(return_maps=return_maps, return_cls=return_cls, with_cross=False)
@@ -180,20 +180,20 @@ def test_grid_pipeline_loader_returns_torch_tensor_dict_for_maps_cls_and_indices
         )
     )
     if return_maps:
-        assert isinstance(batch["maps"], torch.Tensor)
-        assert tuple(batch["maps"].shape) == (1, N_PIX, N_Z_WL + N_Z_GC)
+        assert isinstance(map_tensor, torch.Tensor)
+        assert tuple(map_tensor.shape) == (1, N_PIX, N_Z_WL + N_Z_GC)
     else:
         assert "maps" not in batch
     if return_cls:
-        assert isinstance(batch["cls"], torch.Tensor)
-        assert tuple(batch["cls"].shape) == (1, N_CLS, N_Z_CROSS)
+        assert isinstance(cl_tensor, torch.Tensor)
+        assert tuple(cl_tensor.shape) == (1, N_CLS, N_Z_CROSS)
     else:
-        assert "cls" not in batch
-    assert isinstance(batch["cosmo"], torch.Tensor)
-    assert all(isinstance(batch[key], torch.Tensor) for key in ("i_sobol", "i_signal", "i_noise"))
+        assert cl_tensor is None
+    assert isinstance(cosmo_tensor, torch.Tensor)
+    assert all(isinstance(value, torch.Tensor) for value in index)
 
 
-def test_grid_pipeline_loader_returns_torch_tensor_dict_for_optional_cross_maps(tmp_path):
+def test_grid_pipeline_loader_returns_torch_tensor_for_optional_cross_maps(tmp_path):
     shard = tmp_path / "grid-000000.tar"
     _write_one_grid_shard(shard, with_cross=True)
     pipeline = _minimal_grid_pipeline(return_maps=True, return_cls=False, with_cross=True)
@@ -213,11 +213,11 @@ def test_grid_pipeline_loader_returns_torch_tensor_dict_for_optional_cross_maps(
         )
     )
 
-    assert isinstance(batch["maps"], torch.Tensor)
-    assert tuple(batch["maps"].shape) == (1, N_PIX, N_Z_CROSS_MAP)
-    assert "cls" not in batch
-    assert isinstance(batch["cosmo"], torch.Tensor)
-    assert all(isinstance(batch[key], torch.Tensor) for key in ("i_sobol", "i_signal", "i_noise"))
+    assert isinstance(map_tensor, torch.Tensor)
+    assert tuple(map_tensor.shape) == (1, N_PIX, N_Z_CROSS_MAP)
+    assert cl_tensor is None
+    assert isinstance(cosmo_tensor, torch.Tensor)
+    assert all(isinstance(value, torch.Tensor) for value in index)
 
 
 def _fiducial_arrays():
