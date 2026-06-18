@@ -41,7 +41,8 @@ dependencies = [
     "astropy>=6.1.0",
     "cuHPX",
     "nvidia-dali-cuda130",
-    "webdataset"
+    "webdataset",
+    "torch"
 ]
 
 
@@ -65,8 +66,8 @@ dev = [
 [project.urls]
 Repository = "https://github.com/des-science/multiprobe-simulation-forward-model"
 
-[tool.setuptools]
-packages = ["msfm"]
+[tool.setuptools.packages.find]
+include = ["msfm*"]
 
 [tool.setuptools.package-data]
 msfm = ["*.yaml", "*.yml"]
