@@ -3,11 +3,11 @@ esub ../../msfm/apps/run_grid_postprocessing.py \
     --n_files=2500 \
     --config=../../configs/marcel/simple.yaml \
     --dir_in=/global/cfs/cdirs/des/cosmogrid/processed/v11desy3/CosmoGrid/bary \
-    --dir_out=/pscratch/sd/a/athomsen/v11desy3/marcel/tfrecords/grid \
+    --dir_out=/pscratch/sd/a/athomsen/v11desy3/marcel/webdatasets/grid \
     --cosmogrid_version="1.1" \
     --max_sleep=0 \
     --mode=run --function=main --n_jobs=1 --max_njobs=1000 --tasks="0" \
-    --job_name=tfr_grid_marcel --log_dir=/pscratch/sd/a/athomsen/run_files/marcel/esub_logs \
+    --job_name=wds_grid_marcel --log_dir=/pscratch/sd/a/athomsen/run_files/marcel/esub_logs \
     --system=slurm --source_file=../../pipelines/marcel/perlmutter_setup.sh \
     --additional_slurm_args="--account=des,--constraint=cpu,--qos=shared,--licenses=cfs,--licenses=scratch"
 
@@ -15,11 +15,11 @@ esub ../../msfm/apps/run_fiducial_postprocessing.py \
     --n_files=1000 \
     --config=../../configs/marcel/simple.yaml \
     --dir_in=/global/cfs/cdirs/des/cosmogrid/processed/v11desy3/CosmoGrid/bary \
-    --dir_out=/pscratch/sd/a/athomsen/v11desy3/marcel/tfrecords/fiducial \
+    --dir_out=/pscratch/sd/a/athomsen/v11desy3/marcel/webdatasets/fiducial \
     --cosmogrid_version="1.1" \
     --max_sleep=0 \
     --mode=run --function=main --n_jobs=1 --max_njobs=1000 --tasks="0" \
-    --job_name=tfr_fidu_marcel --log_dir=/pscratch/sd/a/athomsen/run_files/marcel/esub_logs \
+    --job_name=wds_fidu_marcel --log_dir=/pscratch/sd/a/athomsen/run_files/marcel/esub_logs \
     --system=slurm --source_file=../../pipelines/marcel/perlmutter_setup.sh \
     --additional_slurm_args="--account=des,--constraint=cpu,--qos=shared,--licenses=cfs,--licenses=scratch"
 

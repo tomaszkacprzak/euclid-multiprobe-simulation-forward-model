@@ -20,7 +20,11 @@ Meant for
 import numpy as np
 import tensorflow as tf
 import webdataset as wds
+<<<<<<< HEAD
 import os, argparse, warnings, time, yaml, h5py, pickle, glob, itertools
+=======
+import os, argparse, warnings, time, yaml, h5py, pickle, glob
+>>>>>>> torch-rewrite
 
 from msfm.utils import (
     logger,
@@ -75,7 +79,9 @@ def resources(args):
 
 
 def setup(args):
-    description = "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tar WebDataset shards"
+    description = (
+        "Postprocess the CosmoGrid projections into forward-modeled survey footprints in .tar WebDataset shards"
+    )
     parser = argparse.ArgumentParser(description=description, add_help=True)
 
     parser.add_argument(
@@ -747,6 +753,7 @@ def _encode_and_verify(
 
     return sample
 
+
 def merge(indices, args):
     args = setup(args)
     conf = files.load_config(args.config)
@@ -756,7 +763,11 @@ def merge(indices, args):
     n_perms_per_cosmo = conf["analysis"]["fiducial"]["n_perms_per_cosmo"]
     n_examples = n_patches * n_perms_per_cosmo
 
+<<<<<<< HEAD
     webdataset_pattern = filenames.get_filename_webdataset(
+=======
+    wds_pattern = filenames.get_filename_webdataset(
+>>>>>>> torch-rewrite
         args.dir_out,
         tag=conf["survey"]["name"] + args.file_suffix,
         index=None,
@@ -764,6 +775,7 @@ def merge(indices, args):
         with_bary=conf["analysis"]["modelling"]["baryonified"],
         return_pattern=True,
     )
+<<<<<<< HEAD
     webdataset_files = sorted(glob.glob(webdataset_pattern))
 
     cls_samples = (webdatasets.decode_fiducial_cls_sample(sample) for sample in wds.WebDataset(webdataset_files, shardshuffle=False))
@@ -774,12 +786,35 @@ def merge(indices, args):
     i_examples = []
     for example in LOGGER.progressbar(
         cls_samples, total=n_examples, desc="Looping through the WebDataset shards", at_level="info"
+=======
+    wds_files = sorted(glob.glob(wds_pattern))
+    if not wds_files:
+        raise FileNotFoundError(f"No WebDataset tar shards match pattern {wds_pattern!r}")
+
+    cls_dset = (
+        webdatasets.decode_fiducial_cls_sample(sample) for sample in wds.WebDataset(wds_files, shardshuffle=False)
+    )
+
+    if args.debug:
+        n_examples = 10
+
+    cls = []
+    i_examples = []
+    for i, example in LOGGER.progressbar(
+        enumerate(cls_dset), total=n_examples, desc="Looping through the WebDataset tar shards", at_level="info"
+>>>>>>> torch-rewrite
     ):
+        if i >= n_examples:
+            break
+
         cls.append(example["cls"].numpy())
         i_examples.append(int(example["i_signal"]))
 
+    if not cls:
+        raise ValueError("No cls samples were read from the WebDataset tar shards")
+
     # noise realizations
-    n_noise = example["cls"].numpy().shape[0]
+    n_noise = cls[0].shape[0]
     i_noise = np.arange(n_noise)
     i_noise = np.tile(i_noise, n_examples)
 
@@ -800,7 +835,11 @@ def merge(indices, args):
     # perform the binning (all examples at the same time)
     binned_cls, bin_edges = power_spectra.bin_according_to_config(cls, conf)
 
+<<<<<<< HEAD
     # separate folder on the same level as WebDataset shards
+=======
+    # separate folder on the same level as WebDataset tar shards
+>>>>>>> torch-rewrite
     if args.debug:
         out_dir = os.path.join(args.dir_out, "../../cls/debug")
     else:

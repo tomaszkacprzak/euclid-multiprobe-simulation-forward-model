@@ -1,31 +1,31 @@
 # Deprecated TFRecord pipeline: retained for legacy runs; active pipelines use WebDataset shards.
 # preprocessing
-- name: fiducial_tfrecords
+- name: fiducial_webdatasets
   cmd: esub msfm/apps/run_fiducial_preprocessing.py \
     --n_files=1000 \
     --config=configs/v8/linear_bias.yaml \
     --dir_in=/home/ipa/refreg/data/data_products/CosmoGrid/processed/CosmoGrid/v11desy3 \
-    --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v8/linear_bias/tfrecords/fiducial \
+    --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v8/linear_bias/webdatasets/fiducial \
     --cosmogrid_version="1.1" \
     --mode=jobarray --function=all --n_jobs=1000 --max_njobs=50 --tasks="0>1000" \
-    --job_name=tfr_fidu_v8 --system=slurm
+    --job_name=wds_fidu_v8 --system=slurm
 
-- name: grid_tfrecords
+- name: grid_webdatasets
   cmd: esub msfm/apps/run_grid_preprocessing.py \
     --n_files=2500 \
     --config=configs/v8/linear_bias.yaml \
     --dir_in=/home/ipa/refreg/data/data_products/CosmoGrid/processed/CosmoGrid/v11desy3 \
-    --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v8/linear_bias/tfrecords/grid \
+    --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v8/linear_bias/webdatasets/grid \
     --cosmogrid_version="1.1" \
     --mode=jobarray --function=all --n_jobs=2500 --max_nbjobs=100 --tasks="0>2500" \ 
-    --job_name=tfr_grid_v8 --system=slurm
+    --job_name=wds_grid_v8 --system=slurm
 
 # peaks
 - name: fiducial_peaks
   cmd: esub msfm/apps/run_peaks.py \
     --simset=fiducial \
     --config=configs/v8/linear_bias.yaml \
-    --tfr_pattern="/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v8/linear_bias/tfrecords/fiducial/DESy3_fiducial_????.tfrecord" \
+    --wds_pattern="/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v8/linear_bias/webdatasets/fiducial/DESy3_fiducial_????.tar" \
     --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v8/linear_bias/peaks \
     --mode=jobarray --function=all --job_name=peaks_fidu --system=slurm
 
@@ -33,6 +33,6 @@
   cmd: esub msfm/apps/run_peaks.py \
     --simset=grid \
     --config=configs/v8/linear_bias.yaml \
-    --tfr_pattern="/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v8/linear_bias/tfrecords/grid/DESy3_grid_????.tfrecord" \
+    --wds_pattern="/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v8/linear_bias/webdatasets/grid/DESy3_grid_????.tar" \
     --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/peaks \
     --mode=jobarray --function=all --job_name=peaks_grid --system=slurm

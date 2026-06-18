@@ -2,27 +2,27 @@
 # this is meant for Perlmutter, not Euler
 
 # postprocessing
-# - name: fiducial_tfrecords
+# - name: fiducial_webdatasets
 #   cmd: esub ../msfm/apps/run_fiducial_postprocessing.py \
 #     --n_files=1000 \
 #     --config=../configs/v12/nonlinear.yaml \
 #     --dir_in=/global/cfs/cdirs/des/cosmogrid/v11desy3/CosmoGrid/v11desy3 \
-#     --dir_out=/pscratch/sd/a/athomsen/v11desy3/v12/linear_bias/tfrecords/fiducial \
+#     --dir_out=/pscratch/sd/a/athomsen/v11desy3/v12/linear_bias/webdatasets/fiducial \
 #     --cosmogrid_version="1.1" \
 #     --mode=jobarray --function=all --n_jobs=1000 --max_njobs=1000 --tasks="0>1000" --keep_submit_files \
-#     --job_name=tfr_fidu_v12 --log_dir=/pscratch/sd/a/athomsen/run_files/v12/esub_logs \
+#     --job_name=wds_fidu_v12 --log_dir=/pscratch/sd/a/athomsen/run_files/v12/esub_logs \
 #     --system=slurm --source_file=../pipelines/v12/perlmutter_setup.sh \
 #     --additional_slurm_args="--account=des,--constraint=cpu,--qos=shared,--licenses=cfs,--licenses=scratch"
 
-- name: grid_tfrecords
+- name: grid_webdatasets
   cmd: esub ../msfm/apps/run_grid_postprocessing.py \
     --n_files=2500 \
     --config=../configs/v12/nonlinear.yaml \
     --dir_in=/global/cfs/cdirs/des/cosmogrid/v11desy3/CosmoGrid/v11desy3 \
-    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v12/nonlinear/tfrecords/grid \
+    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v12/nonlinear/webdatasets/grid \
     --cosmogrid_version="1.1" \
     --mode=jobarray --function=all --n_jobs=2500 --max_njobs=1000 --tasks="0>2500" --keep_submit_files \
-    --job_name=tfr_grid_v12 --log_dir=/pscratch/sd/a/athomsen/run_files/v12/esub_logs \
+    --job_name=wds_grid_v12 --log_dir=/pscratch/sd/a/athomsen/run_files/v12/esub_logs \
     --system=slurm --source_file=../pipelines/v12/perlmutter_setup.sh \
     --additional_slurm_args="--account=des,--constraint=cpu,--qos=shared,--licenses=cfs,--licenses=scratch"
 
