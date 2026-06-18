@@ -32,8 +32,8 @@ class GridPipeline(MSFMpipeline):
         conf: dict = None,
         # cosmology
         params: list = None,
-        with_lensing: bool = True,
-        with_clustering: bool = True,
+        with_WL: bool = True,
+        with_GC: bool = True,
         with_cross: bool = False,
         # format
         apply_norm: bool = True,
@@ -48,8 +48,8 @@ class GridPipeline(MSFMpipeline):
             conf (str, dict, optional): Can be either a string (a config.yaml is read in), a dictionary (the config is
                 passed through) or None (the default config is loaded). Defaults to None.
             params (list): List of the cosmological parameters of interest. Fiducial: perturbations, grid: labels.
-            with_lensing (bool, optional): Whether to include the kappa maps. Defaults to True.
-            with_clustering (bool, optional): Whether to include the delta maps. Defaults to True.
+            with_WL (bool, optional): Whether to include the kappa maps. Defaults to True.
+            with_GC (bool, optional): Whether to include the delta maps. Defaults to True.
             with_cross (bool, optional): Whether to include the cross-correlation between lensing and clustering. 
                 Defaults to False.
             apply_norm (bool, optional): Whether to rescale the maps to approximate unit range. Defaults to True.
@@ -65,8 +65,8 @@ class GridPipeline(MSFMpipeline):
         super().__init__(
             conf=conf,
             params=params,
-            with_lensing=with_lensing,
-            with_clustering=with_clustering,
+            with_WL=with_WL,
+            with_GC=with_GC,
             with_cross=with_cross,
             apply_norm=apply_norm,
             with_padding=with_padding,
@@ -285,8 +285,8 @@ class GridPipeline(MSFMpipeline):
                 n_noise=self.n_noise_total,
                 n_cls=self.n_cls,
                 # map types
-                with_lensing=self.with_lensing,
-                with_clustering=self.with_clustering,
+                with_WL=self.with_WL,
+                with_GC=self.with_GC,
                 with_cross=self.with_cross,
                 # outputs
                 return_maps=self.return_maps,
@@ -356,12 +356,12 @@ class GridPipeline(MSFMpipeline):
 
         if self.return_maps:
             # separate the noise realizations
-            if self.with_lensing:
+            if self.with_WL:
                 kg = []
                 for i in noise_indices:
                     kg.append(data_vectors.pop(f"kg_{i}"))
 
-            if self.with_clustering:
+            if self.with_GC:
                 dg = []
                 for i in noise_indices:
                     dg.append(data_vectors.pop(f"dg_{i}"))
@@ -384,9 +384,9 @@ class GridPipeline(MSFMpipeline):
 
         if self.return_maps:
             # update the dictionary
-            if self.with_lensing:
+            if self.with_WL:
                 data_vectors["kg"] = kg
-            if self.with_clustering:
+            if self.with_GC:
                 data_vectors["dg"] = dg
             if self.with_cross:
                 data_vectors["xg"] = xg
@@ -414,7 +414,7 @@ class GridPipeline(MSFMpipeline):
         Concatenate both along the z bin axis.
 
         Args:
-            data_vectors (dict): Depending on with_clustering and with_lensing, contains the tensors kg (sum of signal
+            data_vectors (dict): Depending on with_GC and with_WL, contains the tensors kg (sum of signal
                 and intrinsic alignment) and sn (single realization) of shape (n_pix, n_z_WL) and dg of shape
                 (n_pix, n_z_GC).
             index (tuple): A tuple of two integers (i_sobol, i_noise).
@@ -434,7 +434,7 @@ class GridPipeline(MSFMpipeline):
             cosmo = tf.gather(cosmo, [self.all_params.index(param) for param in self.params], axis=1)
 
             if self.return_maps:
-                if self.with_lensing:
+                if self.with_WL:
                     # normalization
                     if self.apply_norm:
                         data_vectors["kg"] = self.normalize_lensing(data_vectors["kg"])
@@ -444,7 +444,7 @@ class GridPipeline(MSFMpipeline):
 
                     map_tensor = data_vectors["kg"]
 
-                if self.with_clustering:
+                if self.with_GC:
                     # normalization
                     if self.apply_norm:
                         data_vectors["dg"] = self.normalize_clustering(data_vectors["dg"])
@@ -466,7 +466,7 @@ class GridPipeline(MSFMpipeline):
 
                     map_tensor = data_vectors["xg"]
 
-                if self.with_lensing and self.with_clustering:
+                if self.with_WL and self.with_GC:
                     # concatenate along the tomography axis
                     map_tensor = tf.concat([data_vectors["kg"], data_vectors["dg"]], axis=-1)
 

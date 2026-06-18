@@ -41,7 +41,9 @@ dependencies = [
     "astropy>=6.1.0",
     "cuHPX",
     "nvidia-dali-cuda130",
+    "webdataset"
 ]
+
 
 [project.optional-dependencies]
 # Only for environments where TensorFlow is not pre-installed

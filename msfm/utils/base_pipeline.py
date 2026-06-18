@@ -28,8 +28,8 @@ class MSFMpipeline:
         conf: dict,
         # cosmology
         params: list = None,
-        with_lensing: bool = True,
-        with_clustering: bool = True,
+        with_WL: bool = True,
+        with_GC: bool = True,
         with_cross: bool = False,
         # format
         apply_norm: bool = True,
@@ -48,8 +48,8 @@ class MSFMpipeline:
             conf (str, dict, optional): Can be either a string (a config.yaml is read in), a dictionary (the config is
                 passed through) or None (the default config is loaded). Defaults to None.
             params (list): List of the cosmological parameters of interest. Fiducial: perturbations, grid: labels.
-            with_lensing (bool, optional): Whether to include the kappa maps. Defaults to True.
-            with_clustering (bool, optional): Whether to include the delta maps. Defaults to True.
+            with_WL (bool, optional): Whether to include the kappa maps. Defaults to True.
+            with_GC (bool, optional): Whether to include the delta maps. Defaults to True.
             with_cross (bool, optional): Whether to include the cross-correlation between lensing and clustering. 
                 Defaults to False.
             apply_norm (bool, optional): Whether to rescale the maps to approximate unit range. Defaults to True.
@@ -108,7 +108,7 @@ class MSFMpipeline:
             self.n_patch_pix = len(self.patch_pix)
 
         # lensing
-        self.with_lensing = with_lensing
+        self.with_WL = with_WL
         self.apply_m_bias = apply_m_bias
         if apply_m_bias:
             self.m_bias_dist = lensing.get_m_bias_distribution(self.conf)
@@ -119,7 +119,7 @@ class MSFMpipeline:
         )
 
         # clustering
-        self.with_clustering = with_clustering
+        self.with_GC = with_GC
         self.tomo_n_gal_maglim = tf.constant(self.conf["survey"]["GC"]["n_gal"]) * hp.nside2pixarea(
             self.conf["analysis"]["n_side"], degrees=True
         )
@@ -130,8 +130,8 @@ class MSFMpipeline:
         self.with_cross = with_cross
         if self.with_cross:
             assert not (
-                self.with_lensing or self.with_clustering
-            ), "with_cross can only be True if both with_lensing and with_clustering are False"
+                self.with_WL or self.with_GC
+            ), "with_cross can only be True if both with_WL and with_GC are False"
 
         # power spectra
         self.n_cls = 3 * self.conf["analysis"]["n_side"]
