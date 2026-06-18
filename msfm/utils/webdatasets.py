@@ -23,6 +23,136 @@ LOGGER = logger.get_logger(__file__)
 
 Sample = Dict[str, Any]
 
+# WebDataset sample schema #############################################################################################
+
+SCHEMA_VERSION = 1
+SCHEMA_VERSION_KEY = "schema_version"
+
+COSMO_KEY = "cosmo"
+CLS_KEY = "cls"
+GRID_LENSING_MAP_KEY_PREFIX = "kg"
+GRID_CLUSTERING_MAP_KEY_PREFIX = "dg"
+GRID_CROSS_MAP_KEY_PREFIX = "xg"
+FIDUCIAL_SHAPE_NOISE_KEY_PREFIX = "sn"
+FIDUCIAL_POISSON_NOISE_KEY_PREFIX = "pn"
+FIDUCIAL_CLS_KEY_PREFIX = "cl"
+
+GRID_ARRAY_KEYS = (COSMO_KEY, CLS_KEY)
+FIDUCIAL_ARRAY_KEYS = (CLS_KEY,)
+OPTIONAL_MAP_KEY_PREFIXES = (GRID_CROSS_MAP_KEY_PREFIX,)
+
+I_SOBOL_KEY = "i_sobol"
+I_SIGNAL_KEY = "i_signal"
+N_PARAMS_KEY = "n_params"
+N_PIX_KEY = "n_pix"
+N_Z_WL_KEY = "n_z_WL"
+N_Z_GC_KEY = "n_z_GC"
+N_Z_CROSS_MAP_KEY = "n_z_cross_map"
+N_NOISE_KEY = "n_noise"
+N_CLS_KEY = "n_cls"
+N_Z_CROSS_KEY = "n_z_cross"
+WITH_LENSING_KEY = "with_lensing"
+WITH_CLUSTERING_KEY = "with_clustering"
+WITH_CROSS_KEY = "with_cross"
+
+GRID_METADATA_KEYS = (N_PARAMS_KEY, I_SOBOL_KEY, I_SIGNAL_KEY)
+FIDUCIAL_METADATA_KEYS = (N_PIX_KEY, N_Z_WL_KEY, N_Z_GC_KEY, I_SIGNAL_KEY, N_NOISE_KEY, N_CLS_KEY, N_Z_CROSS_KEY)
+CLS_METADATA_KEYS = (N_NOISE_KEY, N_CLS_KEY, N_Z_CROSS_KEY)
+PROBE_FLAG_KEYS = (WITH_LENSING_KEY, WITH_CLUSTERING_KEY, WITH_CROSS_KEY)
+
+
+def _has_array_key(sample: Mapping[str, Any], key: str) -> bool:
+    """Return whether ``sample`` contains an encoded or already-decoded array key."""
+    return key in sample or _normalise_key(key) in sample
+
+
+def _missing_metadata_keys(sample: Mapping[str, Any], keys: Sequence[str]) -> Sequence[str]:
+    return tuple(key for key in keys if key not in sample)
+
+
+def _missing_array_keys(sample: Mapping[str, Any], keys: Sequence[str]) -> Sequence[str]:
+    return tuple(key for key in keys if not _has_array_key(sample, key))
+
+
+def _raise_invalid_sample(kind: str, missing_metadata: Sequence[str], missing_arrays: Sequence[str]) -> None:
+    details = []
+    if missing_metadata:
+        details.append(f"missing metadata keys: {', '.join(missing_metadata)}")
+    if missing_arrays:
+        details.append(f"missing array keys: {', '.join(_normalise_key(key) for key in missing_arrays)}")
+    if details:
+        raise KeyError(f"Invalid {kind} WebDataset sample: {'; '.join(details)}")
+
+
+def validate_grid_sample(
+    sample: Mapping[str, Any],
+    noise_indices: Sequence[int] = (),
+    *,
+    with_lensing: bool = True,
+    with_clustering: bool = True,
+    with_cross: bool = False,
+    return_maps: bool = True,
+    return_cls: bool = True,
+    require_cosmo: bool = True,
+) -> None:
+    """Validate that a grid WebDataset sample has the keys needed by the decoder."""
+    metadata_keys = list(GRID_METADATA_KEYS if require_cosmo else (I_SOBOL_KEY, I_SIGNAL_KEY))
+    array_keys = [COSMO_KEY] if require_cosmo else []
+
+    if return_cls:
+        metadata_keys.extend(CLS_METADATA_KEYS)
+        array_keys.append(CLS_KEY)
+    if return_maps:
+        metadata_keys.append(N_PIX_KEY)
+        if with_lensing:
+            metadata_keys.append(N_Z_WL_KEY)
+            array_keys.extend(f"{GRID_LENSING_MAP_KEY_PREFIX}_{i}" for i in noise_indices)
+        if with_clustering:
+            metadata_keys.append(N_Z_GC_KEY)
+            array_keys.extend(f"{GRID_CLUSTERING_MAP_KEY_PREFIX}_{i}" for i in noise_indices)
+        if with_cross:
+            metadata_keys.append(N_Z_CROSS_MAP_KEY)
+            array_keys.extend(f"{GRID_CROSS_MAP_KEY_PREFIX}_{i}" for i in noise_indices)
+
+    _raise_invalid_sample(
+        "grid",
+        _missing_metadata_keys(sample, tuple(dict.fromkeys(metadata_keys))),
+        _missing_array_keys(sample, tuple(dict.fromkeys(array_keys))),
+    )
+
+
+def validate_fiducial_sample(
+    sample: Mapping[str, Any],
+    pert_labels: Sequence[str] = (),
+    noise_indices: Sequence[int] = (),
+    *,
+    with_lensing: bool = True,
+    with_clustering: bool = True,
+    return_maps: bool = True,
+    return_cls: bool = True,
+) -> None:
+    """Validate that a fiducial WebDataset sample has the keys needed by the decoder."""
+    metadata_keys = list(FIDUCIAL_METADATA_KEYS)
+    array_keys = []
+
+    if return_cls:
+        array_keys.extend(f"{FIDUCIAL_CLS_KEY_PREFIX}_{label}" for label in pert_labels)
+    if return_maps:
+        if with_lensing:
+            array_keys.extend(f"{GRID_LENSING_MAP_KEY_PREFIX}_{label}" for label in pert_labels if "bg" not in label)
+            array_keys.extend(f"{FIDUCIAL_SHAPE_NOISE_KEY_PREFIX}_{i}" for i in noise_indices)
+        if with_clustering:
+            array_keys.extend(
+                f"{GRID_CLUSTERING_MAP_KEY_PREFIX}_{label}" for label in pert_labels if "Aia" not in label
+            )
+            array_keys.extend(f"{FIDUCIAL_POISSON_NOISE_KEY_PREFIX}_{i}" for i in noise_indices)
+
+    _raise_invalid_sample(
+        "fiducial",
+        _missing_metadata_keys(sample, tuple(dict.fromkeys(metadata_keys))),
+        _missing_array_keys(sample, tuple(dict.fromkeys(array_keys))),
+    )
+
 
 # Encoding / decoding primitives ######################################################################################
 
@@ -150,34 +280,38 @@ def encode_grid_sample(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal
     ``<field>.npy`` keys and scalar metadata keeps the original TFRecord names.
     """
     sample: Sample = {
-        "n_params": int(np.asarray(cosmo).shape[0]),
-        "i_sobol": int(i_sobol),
-        "i_signal": int(i_signal),
+        SCHEMA_VERSION_KEY: SCHEMA_VERSION,
+        N_PARAMS_KEY: int(np.asarray(cosmo).shape[0]),
+        I_SOBOL_KEY: int(i_sobol),
+        I_SIGNAL_KEY: int(i_signal),
+        WITH_LENSING_KEY: kg is not None and sn_realz is not None,
+        WITH_CLUSTERING_KEY: dg is not None and pn_realz is not None,
+        WITH_CROSS_KEY: xg is not None and xn_realz is not None,
     }
     _set_array(sample, "cosmo", cosmo)
 
     if cls is not None:
         _set_array(sample, "cls", cls)
-        sample.update({"n_noise": int(cls.shape[0]), "n_cls": int(cls.shape[1]), "n_z_cross": int(cls.shape[2])})
+        sample.update({N_NOISE_KEY: int(cls.shape[0]), N_CLS_KEY: int(cls.shape[1]), N_Z_CROSS_KEY: int(cls.shape[2])})
 
     if kg is not None and sn_realz is not None:
         assert kg.shape == sn_realz.shape[1:]
-        sample.update({"n_pix": int(kg.shape[0]), "n_z_WL": int(kg.shape[1])})
+        sample.update({N_PIX_KEY: int(kg.shape[0]), N_Z_WL_KEY: int(kg.shape[1])})
         for i, sn in enumerate(sn_realz):
             _set_array(sample, f"kg_{i}", kg + sn)
 
     if dg is not None and pn_realz is not None:
         assert dg.shape == pn_realz.shape[1:]
         if kg is None:
-            sample["n_pix"] = int(dg.shape[0])
+            sample[N_PIX_KEY] = int(dg.shape[0])
         else:
             assert kg.shape[0] == dg.shape[0]
-        sample["n_z_GC"] = int(dg.shape[1])
+        sample[N_Z_GC_KEY] = int(dg.shape[1])
         for i, pn in enumerate(pn_realz):
             _set_array(sample, f"dg_{i}", dg + pn)
 
     if xg is not None and xn_realz is not None:
-        sample["n_z_cross_map"] = int(xg.shape[1])
+        sample[N_Z_CROSS_MAP_KEY] = int(xg.shape[1])
         for i, xn in enumerate(xn_realz):
             _set_array(sample, f"xg_{i}", xg + xn)
 
@@ -202,6 +336,16 @@ def decode_grid_sample(
     return_cls=True,
 ):
     """Decode a WebDataset grid sample into the same output schema as ``parse_inverse_grid``."""
+    noise_indices = tuple(noise_indices)
+    validate_grid_sample(
+        sample,
+        noise_indices,
+        with_lensing=with_lensing,
+        with_clustering=with_clustering,
+        with_cross=with_cross,
+        return_maps=return_maps,
+        return_cls=return_cls,
+    )
     output = {}
     cosmo = _to_tensor(_get_array(sample, "cosmo"), dtype=tf.float32)
     output["cosmo"] = _with_shape(cosmo, (_metadata(sample, "n_params"),) if n_params is None else (n_params,))
@@ -235,6 +379,7 @@ def decode_grid_sample(
 
 def decode_grid_cls_sample(sample, n_noise=None, n_cls=None, n_z_cross=None, n_params=None):
     """Decode only the grid power-spectrum fields, matching ``parse_inverse_grid_cls``."""
+    validate_grid_sample(sample, return_maps=False, return_cls=True)
     output = {}
     cls = _to_tensor(_get_array(sample, "cls"), dtype=tf.float32)
     output["cls"] = (
@@ -274,13 +419,17 @@ def encode_fiducial_sample(
     assert len(sn_realz) == len(pn_realz) == cl_perts.shape[1]
 
     sample: Sample = {
-        "n_pix": int(kg_perts[0].shape[0]),
-        "n_z_WL": int(kg_perts[0].shape[1]),
-        "n_z_GC": int(dg_perts[0].shape[1]),
-        "i_signal": int(i_signal),
-        "n_noise": int(cl_perts.shape[1]),
-        "n_cls": int(cl_perts.shape[2]),
-        "n_z_cross": int(cl_perts.shape[3]),
+        SCHEMA_VERSION_KEY: SCHEMA_VERSION,
+        N_PIX_KEY: int(kg_perts[0].shape[0]),
+        N_Z_WL_KEY: int(kg_perts[0].shape[1]),
+        N_Z_GC_KEY: int(dg_perts[0].shape[1]),
+        I_SIGNAL_KEY: int(i_signal),
+        N_NOISE_KEY: int(cl_perts.shape[1]),
+        N_CLS_KEY: int(cl_perts.shape[2]),
+        N_Z_CROSS_KEY: int(cl_perts.shape[3]),
+        WITH_LENSING_KEY: True,
+        WITH_CLUSTERING_KEY: True,
+        WITH_CROSS_KEY: False,
     }
     _set_array(sample, "cls", cl_perts[0])
 
@@ -317,6 +466,17 @@ def decode_fiducial_sample(
     return_cls=True,
 ):
     """Decode a WebDataset fiducial sample into the same output schema as ``parse_inverse_fiducial``."""
+    pert_labels = tuple(pert_labels)
+    noise_indices = tuple(noise_indices)
+    validate_fiducial_sample(
+        sample,
+        pert_labels,
+        noise_indices,
+        with_lensing=with_lensing,
+        with_clustering=with_clustering,
+        return_maps=return_maps,
+        return_cls=return_cls,
+    )
     output = {}
     bin_indices, _ = cross_statistics.get_cross_bin_indices(
         _parse_none_value(sample, "n_z_WL", n_z_WL) if with_lensing else 0,
@@ -351,6 +511,8 @@ def decode_fiducial_sample(
 
 def decode_fiducial_cls_sample(sample, n_noise=None, n_cls=None, n_z_cross=None):
     """Decode only the fiducial power-spectrum fields, matching ``parse_inverse_fiducial_cls``."""
+    validate_fiducial_sample(sample, return_maps=False, return_cls=False)
+    _raise_invalid_sample("fiducial", (), _missing_array_keys(sample, (CLS_KEY,)))
     output = {}
     cls = _to_tensor(_get_array(sample, "cls"), dtype=tf.float32)
     output["cls"] = (
