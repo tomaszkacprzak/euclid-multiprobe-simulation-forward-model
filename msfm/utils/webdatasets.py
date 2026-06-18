@@ -274,7 +274,7 @@ def _decode_data_vector(
     n_pix: Optional[int],
     n_z_bins: Optional[int],
     n_z_bins_label: str,
-    tensor_backend: str = "tensorflow",
+    tensor_backend: str = "torch",
 ) -> None:
     tensor = _to_tensor(_get_array(sample, key_in), dtype=torch.float32)
     shape = (
@@ -282,7 +282,7 @@ def _decode_data_vector(
         if n_pix is not None and n_z_bins is not None
         else (_metadata(sample, "n_pix"), _metadata(sample, n_z_bins_label))
     )
-    output[key_out] = _with_shape(tensor, shape, tensor_backend=tensor_backend)
+    output[key_out] = _with_shape(tensor, shape)
 
 
 def _decode_cls(
@@ -295,7 +295,7 @@ def _decode_cls(
     n_z_cross: Optional[int],
     noise_indices: Any,
     bin_indices: Any,
-    tensor_backend: str = "tensorflow",
+    tensor_backend: str = "torch",
 ) -> None:
     cls = _to_tensor(_get_array(sample, key_in), dtype=torch.float32)
     shape = (
@@ -376,7 +376,7 @@ def decode_grid_sample(
     with_cross=False,
     return_maps=True,
     return_cls=True,
-    tensor_backend="tensorflow",
+    tensor_backend="torch",
 ):
     """Decode a WebDataset grid sample into the same output schema as ``parse_inverse_grid``."""
     noise_indices = tuple(noise_indices)

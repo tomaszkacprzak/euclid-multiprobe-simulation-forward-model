@@ -18,13 +18,9 @@ Meant for
 """
 
 import numpy as np
-import tensorflow as tf
+import torch
 import webdataset as wds
-<<<<<<< HEAD
-import os, argparse, warnings, time, yaml, h5py, pickle, glob, itertools
-=======
 import os, argparse, warnings, time, yaml, h5py, pickle, glob
->>>>>>> torch-rewrite
 
 from msfm.utils import (
     logger,
@@ -599,7 +595,7 @@ def _get_clustering_transform(conf, pixel_file):
     quadratic_biasing = conf["analysis"]["modelling"]["clustering"]["quadratic_biasing"]
 
     maglim_mask = files.get_tomo_dv_masks(conf)["maglim"]
-    tomo_n_gal_maglim = tf.constant(conf["survey"]["clustering"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
+    tomo_n_gal_maglim = torch.as_tensor(conf["survey"]["clustering"]["n_gal"]) * hp.nside2pixarea(n_side, degrees=True)
 
     # redshift dependence of the bias
     tomo_bg_perts_dict = parameters.get_tomo_amplitude_perturbations_dict("bg", conf)
@@ -763,11 +759,7 @@ def merge(indices, args):
     n_perms_per_cosmo = conf["analysis"]["fiducial"]["n_perms_per_cosmo"]
     n_examples = n_patches * n_perms_per_cosmo
 
-<<<<<<< HEAD
-    webdataset_pattern = filenames.get_filename_webdataset(
-=======
     wds_pattern = filenames.get_filename_webdataset(
->>>>>>> torch-rewrite
         args.dir_out,
         tag=conf["survey"]["name"] + args.file_suffix,
         index=None,
@@ -775,18 +767,6 @@ def merge(indices, args):
         with_bary=conf["analysis"]["modelling"]["baryonified"],
         return_pattern=True,
     )
-<<<<<<< HEAD
-    webdataset_files = sorted(glob.glob(webdataset_pattern))
-
-    cls_samples = (webdatasets.decode_fiducial_cls_sample(sample) for sample in wds.WebDataset(webdataset_files, shardshuffle=False))
-    if args.debug:
-        cls_samples = itertools.islice(cls_samples, 10)
-
-    cls = []
-    i_examples = []
-    for example in LOGGER.progressbar(
-        cls_samples, total=n_examples, desc="Looping through the WebDataset shards", at_level="info"
-=======
     wds_files = sorted(glob.glob(wds_pattern))
     if not wds_files:
         raise FileNotFoundError(f"No WebDataset tar shards match pattern {wds_pattern!r}")
@@ -802,7 +782,6 @@ def merge(indices, args):
     i_examples = []
     for i, example in LOGGER.progressbar(
         enumerate(cls_dset), total=n_examples, desc="Looping through the WebDataset tar shards", at_level="info"
->>>>>>> torch-rewrite
     ):
         if i >= n_examples:
             break
@@ -835,11 +814,7 @@ def merge(indices, args):
     # perform the binning (all examples at the same time)
     binned_cls, bin_edges = power_spectra.bin_according_to_config(cls, conf)
 
-<<<<<<< HEAD
-    # separate folder on the same level as WebDataset shards
-=======
     # separate folder on the same level as WebDataset tar shards
->>>>>>> torch-rewrite
     if args.debug:
         out_dir = os.path.join(args.dir_out, "../../cls/debug")
     else:
