@@ -38,30 +38,24 @@ def get_kaiser_squires_factors(l_max):
 
 
 def get_m_bias_distribution(conf=None):
-    """Return a tensorflow probability distribution from which the (shear) multiplicative bias can be sampled.
+    """Return a SciPy distribution from which the (shear) multiplicative bias can be sampled.
 
     Args:
         conf (str, dict, optional): Can be either a string (a config.yaml is read in), a dictionary (the config is
             passed through) or None (the default config is loaded). Defaults to None.
 
     Returns:
-        tfp.distribution: Multiplicative bias.s
+        scipy.stats._multivariate.multivariate_normal_frozen: Multiplicative bias distribution.
     """
     conf = files.load_config(conf)
 
-    # import tensorflow_probability as tfp
-
-    # m_bias_dist = tfp.distributions.MultivariateNormalDiag(
-    #     loc=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["mu"],
-    #     scale_diag=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"],
-    # )
     from scipy.stats import multivariate_normal
     m_bias_dist = multivariate_normal(
         mean=conf["survey"]["WL"]["shear_bias"]["multiplicative"]["mu"],
         cov=np.diag(conf["survey"]["WL"]["shear_bias"]["multiplicative"]["sigma"])**2,
     )
 
-    m_bias_dist.sample = m_bias_dist.rvs # for compatibility with tensorflow_probability
+    m_bias_dist.sample = m_bias_dist.rvs # compatibility alias for callers expecting a sample method
 
     return m_bias_dist
 
@@ -120,126 +114,133 @@ def mode_removal(
     return kappa_patch
 
 
-# making this a tf.function doesn't speed things up because the seg_ids are always different
-def noise_gen(counts, cat_dist, n_noise_per_signal):
-    """Generates shape noise from a map of galaxy counts and joint distribution of absolute shear values and their
-    weights.
+def _as_torch_generator(rng=None, seed=None):
+    """Create or reuse a CPU PyTorch generator for deterministic random draws."""
+    import torch
+
+    if isinstance(rng, torch.Generator):
+        return rng
+
+    generator = torch.Generator(device="cpu")
+    if seed is not None:
+        generator.manual_seed(int(seed))
+    elif isinstance(rng, np.random.Generator):
+        generator.manual_seed(int(rng.integers(0, np.iinfo(np.int64).max)))
+    else:
+        generator.seed()
+    return generator
+
+
+def _safe_divide_torch(numerator, denominator):
+    """Divide tensors only where the denominator is nonzero, returning zero otherwise."""
+    import torch
+
+    output = torch.zeros_like(numerator)
+    mask = denominator != 0
+    return torch.where(mask, numerator / torch.where(mask, denominator, torch.ones_like(denominator)), output)
+
+
+def noise_gen(counts, gamma_abs, weights, n_noise_per_signal, rng=None, seed=None):
+    """Generates shape noise from galaxy counts and empirical catalog values.
 
     Args:
-        counts (np.ndarray): Array of shape (len(base_patch_pix),) that contains the galaxy count per pixel
-        cat_dist (tfp.distributions): Distribution with samples of length 2 that contains the absolute magnitudes and
-            weights
-        n_noise_per_signal (int): Number of noise realizations to create, this dimension is included for vectorization
+        counts (np.ndarray): Array of shape ``(len(base_patch_pix),)`` that contains the galaxy count per pixel.
+        gamma_abs (np.ndarray): Absolute shear ``|e|`` samples from the catalog.
+        weights (np.ndarray): Catalog weights corresponding to ``gamma_abs``.
+        n_noise_per_signal (int): Number of noise realizations to create; this dimension is included for vectorization.
+        rng (torch.Generator or np.random.Generator, optional): Random generator used for deterministic sampling.
+        seed (int, optional): Seed used when ``rng`` is not a PyTorch generator.
 
     Returns:
-        np.ndarray: Arrays of shape (len(base_patch_pix, n_noise_per_signal) containing the two gamma components
+        np.ndarray: Arrays of shape ``(len(base_patch_pix), n_noise_per_signal)`` containing the two gamma components.
     """
 
-    import tensorflow as tf
+    import torch
 
-    # indices to sum over all of the galaxies in the individual pixels
-    seg_ids = []
-    for id, n_gals in enumerate(counts):
-        seg_ids.extend(n_gals * [id])
+    counts = np.asarray(counts, dtype=np.int64)
+    n_pix_patch = counts.shape[0]
+    n_gals_patch = int(counts.sum())
 
-    # make a tensor, this is important for performance
-    seg_ids = tf.constant(seg_ids, dtype=tf.int32)
+    if n_gals_patch == 0:
+        zeros = np.zeros((n_pix_patch, n_noise_per_signal), dtype=np.float32)
+        return zeros.copy(), zeros.copy()
 
-    # total number of galaxies in the patch
-    n_gals_patch = len(seg_ids)
+    generator = _as_torch_generator(rng=rng, seed=seed)
 
-    # shape (n_gals_patch, n_noise_per_signal, 2)
-    cat_samples = cat_dist.sample(sample_shape=(n_gals_patch, n_noise_per_signal))
-    # shape (n_gals_patch, n_noise_per_signal)
-    phase_samples = tf.random.uniform(
-        shape=(
-            n_gals_patch,
-            n_noise_per_signal,
-        ),
-        minval=0,
-        maxval=2 * np.pi,
+    seg_ids = torch.as_tensor(np.repeat(np.arange(n_pix_patch, dtype=np.int64), counts), dtype=torch.long)
+    gamma_abs_t = torch.as_tensor(np.asarray(gamma_abs), dtype=torch.float32)
+    weights_t = torch.as_tensor(np.asarray(weights), dtype=torch.float32)
+
+    cat_idx = torch.randint(
+        low=0,
+        high=gamma_abs_t.numel(),
+        size=(n_gals_patch, n_noise_per_signal),
+        generator=generator,
+        dtype=torch.long,
     )
+    phase_samples = torch.rand((n_gals_patch, n_noise_per_signal), generator=generator, dtype=torch.float32) * (2 * np.pi)
 
-    # shape (n_gals_patch, n_noise_per_signal)
-    g1_samples = tf.math.cos(phase_samples) * cat_samples[..., 0]
-    g2_samples = tf.math.sin(phase_samples) * cat_samples[..., 0]
-    w_samples = cat_samples[..., 1]
+    gamma_samples = gamma_abs_t[cat_idx]
+    w_samples = weights_t[cat_idx]
+    sum_per_pix = torch.zeros((n_pix_patch, n_noise_per_signal, 3), dtype=torch.float32)
+    weighted_gamma_samples = torch.stack(
+        [torch.cos(phase_samples) * gamma_samples * w_samples,
+         torch.sin(phase_samples) * gamma_samples * w_samples,
+         w_samples],
+        dim=-1,
+    )
+    sum_per_pix.index_add_(0, seg_ids, weighted_gamma_samples)
 
-    # shape (n_gals_patch, n_noise_per_signal, 3)
-    weighted_gamma_samples = tf.stack([g1_samples * w_samples, g2_samples * w_samples, w_samples], axis=-1)
+    denom = sum_per_pix[..., 2:3]
+    gamma_per_pix = _safe_divide_torch(sum_per_pix[..., :2], denom)
 
-    # len(base_patch_pix), unless the final pixels of the patch don't contain galaxies. Then, it's smaller
-    sum_per_pix = tf.math.segment_sum(weighted_gamma_samples, seg_ids)
-
-    # normalize with weights, set 0/0 equal to 0 instead of nan
-    gamma_per_pix = tf.math.divide_no_nan(sum_per_pix[..., :2], tf.expand_dims(sum_per_pix[..., 2], axis=-1))
-
-    # The condition means that the final pixel contains zero galaxies. Then, its index is not included in the seg_ids
-    # (multiplication with zero) and because it's the last, tensorflow has no way of knowing that it should still take
-    # the segmented_sum over this index, which evaluates to zero. The while loop allows more than one of the last
-    # pixels to be zero.
-    n_final_zero_pix = 0
-    while counts[-(n_final_zero_pix + 1)] == 0:
-        n_final_zero_pix += 1
-
-    if n_final_zero_pix > 0:
-        # There is no galaxy in the final pixels, so the shape noise there is equal to zero
-        zero_pix = tf.zeros((n_final_zero_pix, n_noise_per_signal, 2), dtype=tf.float32)
-        gamma_per_pix = tf.concat((gamma_per_pix, zero_pix), axis=0)
-
-    # shape (len(base_patch_pix), n_noise_per_signal)
     return gamma_per_pix[..., 0].numpy(), gamma_per_pix[..., 1].numpy()
 
 
-def noise_gen_in_place(gamma_abs, w, pix, base_patch_pix, n_pix, n_noise_per_signal):
+def noise_gen_in_place(gamma_abs, w, pix, base_patch_pix, n_pix, n_noise_per_signal, rng=None, seed=None):
     """Generates shape noise by rotating galaxies from the catalog in-place.
 
     Args:
-        gamma_abs (np.ndarray or tf.Tensor): Absolute shear |e| for each catalog galaxy
-        w (np.ndarray or tf.Tensor): Weight for each catalog galaxy
-        pix (np.ndarray or tf.Tensor): Pixel index for each catalog galaxy in the full sky map
-        base_patch_pix (np.ndarray): The pixels that make up the current footprint cutout
-        n_pix (int): Total number of pixels in the healpy map
-        n_noise_per_signal (int): Number of noise realizations
+        gamma_abs (np.ndarray): Absolute shear |e| for each catalog galaxy.
+        w (np.ndarray): Weight for each catalog galaxy.
+        pix (np.ndarray): Pixel index for each catalog galaxy in the full sky map.
+        base_patch_pix (np.ndarray): The pixels that make up the current footprint cutout.
+        n_pix (int): Total number of pixels in the healpy map.
+        n_noise_per_signal (int): Number of noise realizations.
+        rng (torch.Generator or np.random.Generator, optional): Random generator used for deterministic sampling.
+        seed (int, optional): Seed used when ``rng`` is not a PyTorch generator.
 
     Returns:
-        np.ndarray: Arrays of shape (len(base_patch_pix), n_noise_per_signal) containing the two gamma components
+        np.ndarray: Arrays of shape ``(len(base_patch_pix), n_noise_per_signal)`` containing the two gamma components.
     """
-    import tensorflow as tf
+    import torch
 
-    # Place operations on CPU to avoid GPU OOM on shared login nodes where GPU memory is highly restricted
-    with tf.device("/CPU:0"):
-        pix = tf.cast(pix, tf.int32)
-        n_gals = tf.shape(gamma_abs)[0]
+    generator = _as_torch_generator(rng=rng, seed=seed)
 
-        # shape (n_gals, n_noise_per_signal)
-        phase_samples = tf.random.uniform(
-            shape=(
-                n_gals,
-                n_noise_per_signal,
-            ),
-            minval=0,
-            maxval=2 * np.pi,
-        )
+    gamma_abs_t = torch.as_tensor(np.asarray(gamma_abs), dtype=torch.float32)
+    w_t = torch.as_tensor(np.asarray(w), dtype=torch.float32)
+    pix_t = torch.as_tensor(np.asarray(pix), dtype=torch.long)
+    base_patch_pix_t = torch.as_tensor(np.asarray(base_patch_pix), dtype=torch.long)
 
-        g1_samples = tf.math.cos(phase_samples) * tf.expand_dims(gamma_abs, axis=1)
-        g2_samples = tf.math.sin(phase_samples) * tf.expand_dims(gamma_abs, axis=1)
-        w_samples = tf.expand_dims(w, axis=1)
+    n_gals = gamma_abs_t.numel()
+    phase_samples = torch.rand((n_gals, n_noise_per_signal), generator=generator, dtype=torch.float32) * (2 * np.pi)
 
-        weighted_g1 = g1_samples * w_samples
-        weighted_g2 = g2_samples * w_samples
+    w_samples = w_t[:, None]
+    weighted_g1 = torch.cos(phase_samples) * gamma_abs_t[:, None] * w_samples
+    weighted_g2 = torch.sin(phase_samples) * gamma_abs_t[:, None] * w_samples
+    w_expanded = w_samples.expand(-1, n_noise_per_signal)
 
-        sum_g1 = tf.math.unsorted_segment_sum(weighted_g1, pix, num_segments=n_pix)
-        sum_g2 = tf.math.unsorted_segment_sum(weighted_g2, pix, num_segments=n_pix)
-        sum_w = tf.math.unsorted_segment_sum(w_samples, pix, num_segments=n_pix)
+    sum_g1 = torch.zeros((n_pix, n_noise_per_signal), dtype=torch.float32)
+    sum_g2 = torch.zeros((n_pix, n_noise_per_signal), dtype=torch.float32)
+    sum_w = torch.zeros((n_pix, n_noise_per_signal), dtype=torch.float32)
+    sum_g1.index_add_(0, pix_t, weighted_g1)
+    sum_g2.index_add_(0, pix_t, weighted_g2)
+    sum_w.index_add_(0, pix_t, w_expanded)
 
-        gamma1_per_pix = tf.math.divide_no_nan(sum_g1, sum_w)
-        gamma2_per_pix = tf.math.divide_no_nan(sum_g2, sum_w)
+    gamma1_per_pix = _safe_divide_torch(sum_g1, sum_w)
+    gamma2_per_pix = _safe_divide_torch(sum_g2, sum_w)
 
-        gamma1_patch = tf.gather(gamma1_per_pix, base_patch_pix)
-        gamma2_patch = tf.gather(gamma2_per_pix, base_patch_pix)
-
-    return gamma1_patch.numpy(), gamma2_patch.numpy()
+    return gamma1_per_pix[base_patch_pix_t].numpy(), gamma2_per_pix[base_patch_pix_t].numpy()
 
 
 def noise_gen_numba(counts, gamma_abs, weights, n_noise_per_signal, rng):
@@ -359,10 +360,6 @@ def noise_gen_numba_parallel(counts, gamma_abs, weights, n_noise_per_signal, rng
     return g1_out, g2_out
 
 
-import numpy as np
-from numba import njit, prange
-
-
 @njit(cache=True)
 def _build_patch_lookup(base_patch_pix, n_pix):
     """
@@ -478,6 +475,7 @@ def noise_gen_in_place_numba(
         pix,
         patch_lookup,
         n_noise_per_signal,
+        rng,
     )
 
 def kappa_to_gamma(kappa_full_sky, hp_datapath, kappa2gamma_fac, n_side):

@@ -29,6 +29,7 @@ dependencies = [
     "scipy",
     "healpy",
     "numba",
+    "torch",
     "h5py",
     "pyyaml",
     "tqdm",
