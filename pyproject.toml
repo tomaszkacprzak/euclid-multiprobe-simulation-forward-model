@@ -41,7 +41,8 @@ dependencies = [
     "astropy>=6.1.0",
     "cuHPX",
     "nvidia-dali-cuda130",
-    "webdataset"
+    "webdataset",
+    "torch"
 ]
 
 
