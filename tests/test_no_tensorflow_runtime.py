@@ -7,12 +7,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 ACTIVE_RUNTIME_DIRS = (REPO_ROOT / "msfm",)
-EXCLUDED_RUNTIME_PATHS = {
-    # Retained as a legacy compatibility module for old TFRecord artifacts.
-    REPO_ROOT / "msfm" / "utils" / "tfrecords.py",
-}
+EXCLUDED_RUNTIME_PATHS = set()
 EXCLUDED_RUNTIME_DIRS = {
-    # Deprecated legacy applications may still document or use TensorFlow.
     REPO_ROOT / "msfm" / "apps" / "deprecated",
 }
 FORBIDDEN_TENSORFLOW_REFERENCES = (
@@ -20,6 +16,12 @@ FORBIDDEN_TENSORFLOW_REFERENCES = (
     "tensorflow_probability",
     "tf.data",
     "tf.",
+)
+
+FORBIDDEN_TFRECORD_REFERENCES = (
+    "tfrecord",
+    "tfr_pattern",
+    "TFRecord",
 )
 
 
@@ -44,7 +46,7 @@ def _active_python_files() -> list[Path]:
 
 
 def test_active_runtime_code_has_no_tensorflow_references() -> None:
-    """TensorFlow references belong only in deprecated or explicitly legacy code."""
+    """Active runtime code must not reference TensorFlow."""
 
     violations: list[str] = []
     for path in _active_python_files():
@@ -55,3 +57,18 @@ def test_active_runtime_code_has_no_tensorflow_references() -> None:
                 violations.append(f"{relpath}:{line_number}: {', '.join(matches)}: {line.strip()}")
 
     assert not violations, "Active runtime TensorFlow references found:\n" + "\n".join(violations)
+
+
+def test_active_runtime_code_has_no_tfrecord_references() -> None:
+    """Active runtime code must not expose TFRecord loading or generation paths."""
+
+    violations: list[str] = []
+    for path in _active_python_files():
+        for line_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+            lower_line = line.lower()
+            matches = [pattern for pattern in FORBIDDEN_TFRECORD_REFERENCES if pattern.lower() in lower_line]
+            if matches:
+                relpath = path.relative_to(REPO_ROOT)
+                violations.append(f"{relpath}:{line_number}: {', '.join(matches)}: {line.strip()}")
+
+    assert not violations, "Active runtime TFRecord references found:\n" + "\n".join(violations)

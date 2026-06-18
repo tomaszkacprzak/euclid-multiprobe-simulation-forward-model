@@ -1,4 +1,4 @@
-# Deprecated TFRecord pipeline: retained for legacy runs; active pipelines use WebDataset shards.
+# WebDataset pipeline: TFRecord generation and loading are no longer supported.
 #!/bin/bash
 #SBATCH --account=des
 #SBATCH --constraint=cpu

@@ -102,14 +102,7 @@ def setup(args):
     args, _ = parser.parse_known_args(args)
 
     if args.wds_pattern is None:
-        if args.deprecated_tfr_pattern is None:
-            parser.error("one of --wds_pattern/--pattern or deprecated --tfr_pattern is required")
-        LOGGER.warning("--tfr_pattern is deprecated; use --wds_pattern or --pattern for WebDataset .tar shards")
-        args.wds_pattern = args.deprecated_tfr_pattern
-    elif args.deprecated_tfr_pattern is not None:
-        parser.error("provide only one of --wds_pattern/--pattern or deprecated --tfr_pattern")
-
-    delattr(args, "deprecated_tfr_pattern")
+        parser.error("one of --wds_pattern/--pattern is required")
 
     # print arguments
     logger.set_all_loggers_level(args.verbosity)
