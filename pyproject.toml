@@ -41,13 +41,14 @@ dependencies = [
     "astropy>=6.1.0",
     "cuHPX",
     "nvidia-dali-cuda130",
+    "torch",
     "webdataset"
 ]
 
 
 [project.optional-dependencies]
-# Only for environments where TensorFlow is not pre-installed
-tf = [
+# Deprecated: install only when running legacy TFRecord utilities.
+legacy-tfrecord = [
     "tensorflow>=2.0",
     "tensorflow-probability[tf]",
 ]

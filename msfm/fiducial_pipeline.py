@@ -28,7 +28,7 @@ LOGGER = logger.get_logger(__file__)
 
 class FiducialPipeline(MSFMpipeline):
     """
-    Sets up a tf.data.Dataset for the fiducial cosmology and its per parameter perturbations.
+    Sets up the WebDataset-backed dataset pipeline for the fiducial cosmology and its per parameter perturbations.
     """
 
     def __init__(
@@ -138,7 +138,7 @@ class FiducialPipeline(MSFMpipeline):
                 RAM usage, especially if there's more than one dataset within the same script.
             n_prefetch (int, optional): Number of dataset elements to prefetch. Defaults to None, then tf.data.AUTOTUNE
                 is used.
-            file_name_shuffle_buffer (int, optional): Size of the shuffle buffer for the .tfrecord files. Defaults to
+            file_name_shuffle_buffer (int, optional): Size of the shuffle buffer for the WebDataset shard files. Defaults to
                 128.
             examples_shuffle_buffer (int, optional): Size of the shuffle buffer for the non-batched examples. Defaults
                 to 128.
@@ -338,7 +338,7 @@ class FiducialPipeline(MSFMpipeline):
         return keys
 
     def _split_noise_realizations(self, data_vectors: dict, noise_indices: Union[list, range]) -> tf.data.Dataset:
-        """Split the dictionary stored within the .tfrecord files into the separate noise realizations stored within.
+        """Split the dictionary stored within the WebDataset samples into the separate noise realizations stored within.
         For this, the signal maps are copied in memory and paired with the noise realizations. So a single element
         of the dataset is mapped to a new dataset containing len(noise_indices) examples. Therefore, this function
         should be applied as flat_map or interleave.

@@ -5,8 +5,8 @@ Created March 2024
 Author: Arne Thomsen
 
 Transform the full sky weak lensing signal and intrinsic alignment maps into multiple survey footprint cut-outs and
-store them in .tfrecord files. The parallelization is done over the .tfrecord files, every jobarray element corresponds
-to one.
+store them in WebDataset tar files. The parallelization is done over the WebDataset shards, every jobarray
+element corresponds to one shard.
 
 For the grid, the main loop runs over the cosmologies.
 

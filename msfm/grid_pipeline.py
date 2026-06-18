@@ -28,7 +28,7 @@ LOGGER = logger.get_logger(__file__)
 
 class GridPipeline(MSFMpipeline):
     """
-    Sets up a tf.data.Dataset for the grid cosmologies.
+    Sets up the WebDataset-backed dataset pipeline for the grid cosmologies.
     """
 
     def __init__(
@@ -77,7 +77,7 @@ class GridPipeline(MSFMpipeline):
             z_bin_inds=z_bin_inds,
             return_maps=return_maps,
             return_cls=return_cls,
-            # these are fixed in the .tfrecord files
+            # these are fixed in the WebDataset samples
             apply_m_bias=False,
             shape_noise_scale=1.0,
             poisson_noise_scale=1.0,
@@ -372,7 +372,7 @@ class GridPipeline(MSFMpipeline):
         return keys
 
     def _split_noise_realizations(self, data_vectors: dict, noise_indices: Union[list, range]) -> tf.data.Dataset:
-        """Split the dictionary stored within the .tfrecord files into the separate noise realizations stored within.
+        """Split the dictionary stored within the WebDataset samples into the separate noise realizations stored within.
         In this way, a single element of the dataset is mapped to a new dataset. Therefore, this function should be
         applied as flat_map or interleave.
 
