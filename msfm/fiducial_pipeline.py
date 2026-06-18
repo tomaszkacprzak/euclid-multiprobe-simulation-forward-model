@@ -222,9 +222,16 @@ class FiducialPipeline(MSFMpipeline):
             raise ValueError("Provide only one of pattern or deprecated tfr_pattern")
 
         # get the file names
-        file_names = sorted(glob.glob(pattern))
+        file_names = sorted(file_name for file_name in glob.glob(pattern) if file_name.endswith(".tar"))
         if not file_names:
-            raise FileNotFoundError(f"No WebDataset shards match pattern {pattern!r}")
+            raise FileNotFoundError(f"No WebDataset .tar shards match pattern {pattern!r}")
+        LOGGER.info(f"Resolved {len(file_names)} WebDataset .tar shards before distributed sharding")
+
+        if is_eval:
+            LOGGER.info("Evaluation mode keeps WebDataset shards in sorted order and does not repeat")
+        else:
+            random.Random(file_name_shuffle_seed).shuffle(file_names)
+            LOGGER.info(f"Shuffled WebDataset shard file list with file_name_shuffle_seed = {file_name_shuffle_seed}")
 
         # shard for distributed training
         if input_context is not None:
@@ -233,8 +240,15 @@ class FiducialPipeline(MSFMpipeline):
             # NOTE My HorovodStrategy is written to be compatible with this
 
             # Taken from https://www.tensorflow.org/tutorials/distribute/input#usage_2
+            n_file_names_before_sharding = len(file_names)
             file_names = file_names[input_context.input_pipeline_id :: input_context.num_input_pipelines]
-            LOGGER.info(f"Sharding the dataset over the WebDataset shards according to the input context")
+            LOGGER.info(
+                f"Sharding the dataset over the WebDataset shards according to the input context "
+                f"(pipeline {input_context.input_pipeline_id}/{input_context.num_input_pipelines}): "
+                f"{n_file_names_before_sharding} -> {len(file_names)} shards"
+            )
+        else:
+            LOGGER.info(f"Using all {len(file_names)} WebDataset .tar shards after distributed sharding")
 
         output_signature = {
             key: tf.TensorSpec(shape=None, dtype=tf.float32) for key in self._fiducial_float_keys(noise_indices)
@@ -242,17 +256,8 @@ class FiducialPipeline(MSFMpipeline):
         output_signature["i_signal"] = tf.TensorSpec(shape=(), dtype=tf.int64)
 
         def generator():
-            rng = random.Random(file_name_shuffle_seed)
             while True:
-                epoch_files = list(file_names)
-                if (
-                    not is_eval
-                    and not is_cached
-                    and (file_name_shuffle_buffer is not None)
-                    and (file_name_shuffle_buffer > 0)
-                ):
-                    rng.shuffle(epoch_files)
-                for file_name in epoch_files:
+                for file_name in file_names:
                     for sample in wds.WebDataset([file_name], shardshuffle=False):
                         decoded = webdatasets.decode_fiducial_sample(
                             sample,
