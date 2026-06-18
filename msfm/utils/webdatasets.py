@@ -217,8 +217,19 @@ def _get_array(sample: Mapping[str, Any], key: str, *, dtype: Optional[Any] = No
     return array
 
 
-def _to_tensor(value: Any, *, dtype: Optional[Any] = None) -> tf.Tensor:
-    return tf.convert_to_tensor(value, dtype=dtype)
+def _to_tensor(value: Any, *, dtype: Optional[Any] = None, tensor_backend: str = "tensorflow"):
+    if tensor_backend == "tensorflow":
+        return tf.convert_to_tensor(value, dtype=dtype)
+    if tensor_backend == "torch":
+        import torch
+
+        torch_dtype = dtype
+        if dtype == tf.float32 or dtype == np.float32:
+            torch_dtype = torch.float32
+        elif dtype == tf.int64 or dtype == np.int64:
+            torch_dtype = torch.int64
+        return torch.as_tensor(value, dtype=torch_dtype)
+    raise ValueError(f"Unsupported tensor_backend {tensor_backend!r}")
 
 
 def _to_int(value: Any) -> int:
@@ -248,10 +259,14 @@ def _parse_none_value(sample: Mapping[str, Any], key: str, value: Optional[int])
     return _metadata(sample, key) if value is None else value
 
 
-def _with_shape(tensor: tf.Tensor, shape: Sequence[Optional[int]]) -> tf.Tensor:
-    if all(dim is not None for dim in shape):
-        return tf.ensure_shape(tensor, shape=shape)
-    return tf.reshape(tensor, shape=shape)
+def _with_shape(tensor: tf.Tensor, shape: Sequence[Optional[int]], tensor_backend: str = "tensorflow"):
+    if tensor_backend == "tensorflow":
+        if all(dim is not None for dim in shape):
+            return tf.ensure_shape(tensor, shape=shape)
+        return tf.reshape(tensor, shape=shape)
+    if tensor_backend == "torch":
+        return tensor.reshape(tuple(shape))
+    raise ValueError(f"Unsupported tensor_backend {tensor_backend!r}")
 
 
 def _decode_data_vector(
@@ -262,14 +277,15 @@ def _decode_data_vector(
     n_pix: Optional[int],
     n_z_bins: Optional[int],
     n_z_bins_label: str,
+    tensor_backend: str = "tensorflow",
 ) -> None:
-    tensor = _to_tensor(_get_array(sample, key_in), dtype=tf.float32)
+    tensor = _to_tensor(_get_array(sample, key_in), dtype=tf.float32, tensor_backend=tensor_backend)
     shape = (
         (n_pix, n_z_bins)
         if n_pix is not None and n_z_bins is not None
         else (_metadata(sample, "n_pix"), _metadata(sample, n_z_bins_label))
     )
-    output[key_out] = _with_shape(tensor, shape)
+    output[key_out] = _with_shape(tensor, shape, tensor_backend=tensor_backend)
 
 
 def _decode_cls(
@@ -282,16 +298,37 @@ def _decode_cls(
     n_z_cross: Optional[int],
     noise_indices: Any,
     bin_indices: Any,
+    tensor_backend: str = "tensorflow",
 ) -> None:
-    cls = _to_tensor(_get_array(sample, key_in), dtype=tf.float32)
-    if n_noise is None and n_cls is None and n_z_cross is None:
-        cls = tf.reshape(
-            cls, shape=(_metadata(sample, "n_noise"), _metadata(sample, "n_cls"), _metadata(sample, "n_z_cross"))
+    cls = _to_tensor(_get_array(sample, key_in), dtype=tf.float32, tensor_backend=tensor_backend)
+    if tensor_backend == "tensorflow":
+        if n_noise is None and n_cls is None and n_z_cross is None:
+            cls = tf.reshape(
+                cls, shape=(_metadata(sample, "n_noise"), _metadata(sample, "n_cls"), _metadata(sample, "n_z_cross"))
+            )
+        else:
+            cls = tf.ensure_shape(cls, shape=(n_noise, n_cls, n_z_cross))
+        cls = tf.gather(cls, noise_indices, axis=0)
+        cls = tf.gather(cls, bin_indices, axis=-1)
+    elif tensor_backend == "torch":
+        import torch
+
+        shape = (
+            (_metadata(sample, "n_noise"), _metadata(sample, "n_cls"), _metadata(sample, "n_z_cross"))
+            if n_noise is None and n_cls is None and n_z_cross is None
+            else (n_noise, n_cls, n_z_cross)
         )
+        cls = cls.reshape(shape)
+        noise_index = torch.as_tensor(
+            noise_indices if isinstance(noise_indices, (list, tuple)) else [noise_indices], dtype=torch.long
+        )
+        cls = torch.index_select(cls, 0, noise_index)
+        if not isinstance(noise_indices, (list, tuple)):
+            cls = cls.squeeze(0)
+        bin_index = torch.as_tensor(bin_indices, dtype=torch.long)
+        cls = torch.index_select(cls, -1, bin_index)
     else:
-        cls = tf.ensure_shape(cls, shape=(n_noise, n_cls, n_z_cross))
-    cls = tf.gather(cls, noise_indices, axis=0)
-    cls = tf.gather(cls, bin_indices, axis=-1)
+        raise ValueError(f"Unsupported tensor_backend {tensor_backend!r}")
     output[key_out] = cls
 
 
@@ -362,6 +399,7 @@ def decode_grid_sample(
     with_cross=False,
     return_maps=True,
     return_cls=True,
+    tensor_backend="tensorflow",
 ):
     """Decode a WebDataset grid sample into the same output schema as ``parse_inverse_grid``."""
     noise_indices = tuple(noise_indices)
@@ -375,17 +413,21 @@ def decode_grid_sample(
         return_cls=return_cls,
     )
     output = {}
-    cosmo = _to_tensor(_get_array(sample, "cosmo"), dtype=tf.float32)
-    output["cosmo"] = _with_shape(cosmo, (_metadata(sample, "n_params"),) if n_params is None else (n_params,))
+    cosmo = _to_tensor(_get_array(sample, "cosmo"), dtype=tf.float32, tensor_backend=tensor_backend)
+    output["cosmo"] = _with_shape(
+        cosmo, (_metadata(sample, "n_params"),) if n_params is None else (n_params,), tensor_backend=tensor_backend
+    )
 
     for i in noise_indices:
         if return_maps:
             if with_lensing:
-                _decode_data_vector(output, sample, f"kg_{i}", f"kg_{i}", n_pix, n_z_WL, "n_z_WL")
+                _decode_data_vector(output, sample, f"kg_{i}", f"kg_{i}", n_pix, n_z_WL, "n_z_WL", tensor_backend)
             if with_clustering:
-                _decode_data_vector(output, sample, f"dg_{i}", f"dg_{i}", n_pix, n_z_GC, "n_z_GC")
+                _decode_data_vector(output, sample, f"dg_{i}", f"dg_{i}", n_pix, n_z_GC, "n_z_GC", tensor_backend)
             if with_cross:
-                _decode_data_vector(output, sample, f"xg_{i}", f"xg_{i}", n_pix, n_z_cross_map, "n_z_cross_map")
+                _decode_data_vector(
+                    output, sample, f"xg_{i}", f"xg_{i}", n_pix, n_z_cross_map, "n_z_cross_map", tensor_backend
+                )
 
         if return_cls:
             n_z_mc = _parse_none_value(sample, "n_z_WL", n_z_WL) if with_lensing else 0
@@ -398,10 +440,12 @@ def decode_grid_sample(
                 with_cross_z=True,
                 with_cross_probe=(with_lensing and with_clustering),
             )
-            _decode_cls(output, sample, "cls", f"cl_{i}", n_noise, n_cls, n_z_cross, i, bin_indices)
+            _decode_cls(
+                output, sample, "cls", f"cl_{i}", n_noise, n_cls, n_z_cross, i, bin_indices, tensor_backend
+            )
 
-    output["i_sobol"] = _to_tensor(_metadata(sample, "i_sobol"), dtype=tf.int64)
-    output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=tf.int64)
+    output["i_sobol"] = _to_tensor(_metadata(sample, "i_sobol"), dtype=tf.int64, tensor_backend=tensor_backend)
+    output["i_signal"] = _to_tensor(_metadata(sample, "i_signal"), dtype=tf.int64, tensor_backend=tensor_backend)
     return output
 
 
