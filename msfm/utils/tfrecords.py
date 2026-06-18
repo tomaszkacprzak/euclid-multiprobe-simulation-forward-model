@@ -30,10 +30,10 @@ def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal
     """The grid cosmologies contain all of the maps and labels.
 
     Args:
-        kg (np.ndarray): shape(n_pix, n_z_metacal), includes the sum of an original kg and ia map.
-        sn_realz (np.ndarray): shape(n_noise, n_pix, n_z_metacal), shape noise consistent with the kg map.
-        dg (np.ndarray): shape (n_pix, n_z_maglim), a map of galaxy counts (not just density contrast).
-        pn_realz (np.ndarray): shape(n_noise, n_pix, n_z_maglim), poisson noise consistent with the dg map.
+        kg (np.ndarray): shape(n_pix, n_z_WL), includes the sum of an original kg and ia map.
+        sn_realz (np.ndarray): shape(n_noise, n_pix, n_z_WL), shape noise consistent with the kg map.
+        dg (np.ndarray): shape (n_pix, n_z_GC), a map of galaxy counts (not just density contrast).
+        pn_realz (np.ndarray): shape(n_noise, n_pix, n_z_GC), poisson noise consistent with the dg map.
         cosmo (np.ndarray): shape(n_params) to be used as a label.
         cls (np.ndarray): Auto and cross bin (both in terms of the tomographic bins, and the two probes) power spectra.
             The shape is (n_noise, n_cls, n_z_cross).
@@ -65,7 +65,7 @@ def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal
     if kg is not None and sn_realz is not None:
         assert kg.shape == sn_realz.shape[1:]
         features["n_pix"] = _int64_feature(kg.shape[0])
-        features["n_z_metacal"] = _int64_feature(kg.shape[1])
+        features["n_z_WL"] = _int64_feature(kg.shape[1])
         for i, sn in enumerate(sn_realz):
             features[f"kg_{i}"] = _bytes_feature(tf.io.serialize_tensor(kg + sn)) # here we add the noise map to the signal map
 
@@ -75,7 +75,7 @@ def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal
             features["n_pix"] = _int64_feature(dg.shape[0])
         else:
             assert kg.shape[0] == dg.shape[0]
-        features["n_z_maglim"] = _int64_feature(dg.shape[1])
+        features["n_z_GC"] = _int64_feature(dg.shape[1])
         for i, pn in enumerate(pn_realz):
             features[f"dg_{i}"] = _bytes_feature(tf.io.serialize_tensor(dg + pn))
 
@@ -96,8 +96,8 @@ def parse_inverse_grid(
     noise_indices=[0],
     # shapes
     n_pix=None,
-    n_z_metacal=None,
-    n_z_maglim=None,
+    n_z_WL=None,
+    n_z_GC=None,
     n_z_cross_map=None,
     n_z_cross=None,
     n_params=None,
@@ -118,8 +118,8 @@ def parse_inverse_grid(
         noise_indices (Union[list, range], optional): Realizations corresponding to these noise indices are returned.
             Defaults to [0].
         n_pix (int, optional): Fixes the size of the tensors. Defaults to None.
-        n_z_metacal (int, optional): Fixes the size of the tensors. Defaults to None.
-        n_z_maglim (int, optional): Fixes the size of the tensors. Defaults to None.
+        n_z_WL (int, optional): Fixes the size of the tensors. Defaults to None.
+        n_z_GC (int, optional): Fixes the size of the tensors. Defaults to None.
         n_params (int, optional): Fixes the size of the tensors. Defaults to None.
         with_lensing (bool, optional): Whether to return the weak lensing maps. Defaults to True.
         with_clustering (bool, optional): Whether to return the galaxy clustering maps. Defaults to True.
@@ -161,10 +161,10 @@ def parse_inverse_grid(
                 features[f"xg_{i}"] = tf.io.FixedLenFeature([], tf.string)
 
     if with_lensing and (return_maps or return_cls):
-        features["n_z_metacal"] = tf.io.FixedLenFeature([], tf.int64)
+        features["n_z_WL"] = tf.io.FixedLenFeature([], tf.int64)
 
     if with_clustering and (return_maps or return_cls):
-        features["n_z_maglim"] = tf.io.FixedLenFeature([], tf.int64)
+        features["n_z_GC"] = tf.io.FixedLenFeature([], tf.int64)
 
     if with_cross and return_maps:
         features["n_z_cross_map"] = tf.io.FixedLenFeature([], tf.int64)
@@ -185,12 +185,12 @@ def parse_inverse_grid(
         if return_maps:
             if with_lensing:
                 output_data = _parse_and_reshape_data_vector(
-                    output_data, serialized_data, f"kg_{i}", f"kg_{i}", n_pix, n_z_metacal, "n_z_metacal"
+                    output_data, serialized_data, f"kg_{i}", f"kg_{i}", n_pix, n_z_WL, "n_z_WL"
                 )
 
             if with_clustering:
                 output_data = _parse_and_reshape_data_vector(
-                    output_data, serialized_data, f"dg_{i}", f"dg_{i}", n_pix, n_z_maglim, "n_z_maglim"
+                    output_data, serialized_data, f"dg_{i}", f"dg_{i}", n_pix, n_z_GC, "n_z_GC"
                 )
 
             if with_cross:
@@ -199,8 +199,8 @@ def parse_inverse_grid(
                 )
 
         if return_cls:
-            n_z_mc = _parse_none_value(serialized_data, "n_z_metacal", n_z_metacal) if with_lensing else 0
-            n_z_ml = _parse_none_value(serialized_data, "n_z_maglim", n_z_maglim) if with_clustering else 0
+            n_z_mc = _parse_none_value(serialized_data, "n_z_WL", n_z_WL) if with_lensing else 0
+            n_z_ml = _parse_none_value(serialized_data, "n_z_GC", n_z_GC) if with_clustering else 0
             bin_indices, _ = cross_statistics.get_cross_bin_indices(
                 n_z_mc,
                 n_z_ml,
@@ -323,14 +323,14 @@ def parse_forward_fiducial(
     Args:
         cosmo_pert_labels (list): Dictionary keys of length n_cosmo_perts and string elements. These are the
             cosmological parameters and common to both kg and dg.
-        kg_perts (list): Kappa perturbations of length n_perts and elements of shape(n_pix, n_z_metacal).
-        dg_perts (list): Delta perturbations of length n_perts and elements of shape(n_pix, n_z_maglim).
+        kg_perts (list): Kappa perturbations of length n_perts and elements of shape(n_pix, n_z_WL).
+        dg_perts (list): Delta perturbations of length n_perts and elements of shape(n_pix, n_z_GC).
         ia_pert_labels (list): Dictionary keys for the intrinsic alignment perturbations, which only affect kg.
         ia_perts (list): Same length as ia_pert_labels, these are the perturbed kg tensors.
-        sn_realz (np.ndarray): Shape noise realizations of shape(n_noise, n_pix, n_z_metacal).
+        sn_realz (np.ndarray): Shape noise realizations of shape(n_noise, n_pix, n_z_WL).
         bg_pert_labels (list): Dictionary keys for the galaxy clustering perturbations, which only affect dg.
         bg_perts (list): Same length as bg_pert_labels, these are the perturbed dg tensors.
-        pn_realz (np.ndarray): Poisson noise realizations of shape(n_noise, n_pix, n_z_maglim).
+        pn_realz (np.ndarray): Poisson noise realizations of shape(n_noise, n_pix, n_z_GC).
         cls (np.ndarray): Auto and cross bin (both in terms of the tomographic bins, and the two probes) power spectra.
             The shape is (n_noise, n_cls, n_z_cross).
         i_signal (int): example index (comes from simulation run and the patch), there are
@@ -358,8 +358,8 @@ def parse_forward_fiducial(
     features = {
         # tensor shapes
         "n_pix": _int64_feature(kg_perts[0].shape[0]),
-        "n_z_metacal": _int64_feature(kg_perts[0].shape[1]),
-        "n_z_maglim": _int64_feature(dg_perts[0].shape[1]),
+        "n_z_WL": _int64_feature(kg_perts[0].shape[1]),
+        "n_z_GC": _int64_feature(dg_perts[0].shape[1]),
         # label
         "i_signal": _int64_feature(i_signal),
         # power spectra
@@ -404,8 +404,8 @@ def parse_inverse_fiducial(
     noise_indices=[0],
     # shapes
     n_pix=None,
-    n_z_metacal=None,
-    n_z_maglim=None,
+    n_z_WL=None,
+    n_z_GC=None,
     n_noise=None,
     n_cls=None,
     n_z_cross=None,
@@ -425,8 +425,8 @@ def parse_inverse_fiducial(
         noise_indices (Union[list, range], optional): Realizations corresponding to these noise indices are returned.
             Defaults to [0].
         n_pix (int, optional): Fixes the size of the tensors. Defaults to None.
-        n_z_metacal (int, optional): Fixes the size of the tensors. Defaults to None.
-        n_z_maglim (int, optional): Fixes the size of the tensors. Defaults to None.
+        n_z_WL (int, optional): Fixes the size of the tensors. Defaults to None.
+        n_z_GC (int, optional): Fixes the size of the tensors. Defaults to None.
         with_lensing (bool, optional): Whether the weak lensing maps should be returned or not. Defaults to True.
         with_clustering (bool, optional): Whether the galaxy clustering maps should be returned or not. Defaults to
             True.
@@ -439,8 +439,8 @@ def parse_inverse_fiducial(
     features = {
         # tensor shapes, not recommended as reshaping with respect to them leads to a None shape in tf.function
         "n_pix": tf.io.FixedLenFeature([], tf.int64),
-        "n_z_metacal": tf.io.FixedLenFeature([], tf.int64),
-        "n_z_maglim": tf.io.FixedLenFeature([], tf.int64),
+        "n_z_WL": tf.io.FixedLenFeature([], tf.int64),
+        "n_z_GC": tf.io.FixedLenFeature([], tf.int64),
         "n_noise": tf.io.FixedLenFeature([], tf.int64),
         "n_cls": tf.io.FixedLenFeature([], tf.int64),
         "n_z_cross": tf.io.FixedLenFeature([], tf.int64),
@@ -478,8 +478,8 @@ def parse_inverse_fiducial(
     output_data = {}
 
     bin_indices, _ = cross_statistics.get_cross_bin_indices(
-        _parse_none_value(serialized_data, "n_z_metacal", n_z_metacal) if with_lensing else 0,
-        _parse_none_value(serialized_data, "n_z_maglim", n_z_maglim) if with_clustering else 0,
+        _parse_none_value(serialized_data, "n_z_WL", n_z_WL) if with_lensing else 0,
+        _parse_none_value(serialized_data, "n_z_GC", n_z_GC) if with_clustering else 0,
         with_lensing,
         with_clustering,
         with_cross_z=True,
@@ -492,13 +492,13 @@ def parse_inverse_fiducial(
             # kappa: cosmological + intrinsic alignment parameters
             if with_lensing and (not "bg" in label):
                 output_data = _parse_and_reshape_data_vector(
-                    output_data, serialized_data, f"kg_{label}", f"kg_{label}", n_pix, n_z_metacal, "n_z_metacal"
+                    output_data, serialized_data, f"kg_{label}", f"kg_{label}", n_pix, n_z_WL, "n_z_WL"
                 )
 
             # delta: cosmological + galaxy clustering parameters
             if with_clustering and (not "Aia" in label):
                 output_data = _parse_and_reshape_data_vector(
-                    output_data, serialized_data, f"dg_{label}", f"dg_{label}", n_pix, n_z_maglim, "n_z_maglim"
+                    output_data, serialized_data, f"dg_{label}", f"dg_{label}", n_pix, n_z_GC, "n_z_GC"
                 )
 
         if return_cls:
@@ -520,13 +520,13 @@ def parse_inverse_fiducial(
             # shape noise
             if with_lensing:
                 output_data = _parse_and_reshape_data_vector(
-                    output_data, serialized_data, f"sn_{i}", f"sn_{i}", n_pix, n_z_metacal, "n_z_metacal"
+                    output_data, serialized_data, f"sn_{i}", f"sn_{i}", n_pix, n_z_WL, "n_z_WL"
                 )
 
             # poisson noise
             if with_clustering:
                 output_data = _parse_and_reshape_data_vector(
-                    output_data, serialized_data, f"pn_{i}", f"pn_{i}", n_pix, n_z_maglim, "n_z_maglim"
+                    output_data, serialized_data, f"pn_{i}", f"pn_{i}", n_pix, n_z_GC, "n_z_GC"
                 )
 
     # indices

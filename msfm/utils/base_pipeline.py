@@ -89,16 +89,16 @@ class MSFMpipeline:
         self.return_cls = return_cls
         assert self.return_maps or self.return_cls, "At least one of return_maps and return_cls must be True"
 
-        self.n_z_WL = len(self.conf["survey"]["lensing"]["z_bins"])
-        self.n_z_GC = len(self.conf["survey"]["clustering"]["z_bins"])
+        self.n_z_WL = len(self.conf["survey"]["WL"]["z_bins"])
+        self.n_z_GC = len(self.conf["survey"]["GC"]["z_bins"])
 
         # pixel file
         self.data_vec_pix, _, _, _ = files.load_pixel_file(self.conf)
         self.n_dv_pix = len(self.data_vec_pix)
 
         masks_dict = files.get_tomo_dv_masks(self.conf)
-        self.masks_WL = tf.constant(masks_dict["metacal"], dtype=tf.float32)
-        self.masks_GC = tf.constant(masks_dict["maglim"], dtype=tf.float32)
+        self.masks_WL = tf.constant(masks_dict["WL"], dtype=tf.float32)
+        self.masks_GC = tf.constant(masks_dict["GC"], dtype=tf.float32)
 
         if not self.with_padding:
             # only keep indices that are in all (per tomographic bin and galaxy sample) masks
@@ -115,16 +115,16 @@ class MSFMpipeline:
         else:
             self.m_bias_dist = None
         self.normalize_lensing = lambda lensing_dv: lensing_dv / tf.constant(
-            self.conf["analysis"]["normalization"]["lensing"], dtype=tf.float32
+            self.conf["analysis"]["normalization"]["WL"], dtype=tf.float32
         )
 
         # clustering
         self.with_clustering = with_clustering
-        self.tomo_n_gal_maglim = tf.constant(self.conf["survey"]["clustering"]["n_gal"]) * hp.nside2pixarea(
+        self.tomo_n_gal_maglim = tf.constant(self.conf["survey"]["GC"]["n_gal"]) * hp.nside2pixarea(
             self.conf["analysis"]["n_side"], degrees=True
         )
         self.normalize_clustering = lambda clustering_dv: clustering_dv / tf.constant(
-            self.conf["analysis"]["normalization"]["clustering"], dtype=tf.float32
+            self.conf["analysis"]["normalization"]["GC"], dtype=tf.float32
         )
 
         self.with_cross = with_cross

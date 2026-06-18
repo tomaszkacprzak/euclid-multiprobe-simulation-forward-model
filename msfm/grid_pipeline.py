@@ -440,7 +440,7 @@ class GridPipeline(MSFMpipeline):
                         data_vectors["kg"] = self.normalize_lensing(data_vectors["kg"])
 
                     # masking
-                    data_vectors["kg"] *= self.masks_metacal
+                    data_vectors["kg"] *= self.masks_WL
 
                     map_tensor = data_vectors["kg"]
 
@@ -458,7 +458,7 @@ class GridPipeline(MSFMpipeline):
                     # NOTE no normalization
 
                     # masking NOTE this assumes a single mask per tomographic bin
-                    mask = tf.math.reduce_prod(self.masks_metacal, axis=-1) * tf.math.reduce_prod(
+                    mask = tf.math.reduce_prod(self.masks_WL, axis=-1) * tf.math.reduce_prod(
                         self.masks_GC, axis=-1
                     )
                     mask = tf.expand_dims(mask, axis=-1)
