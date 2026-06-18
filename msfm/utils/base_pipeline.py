@@ -7,7 +7,9 @@ Author: Arne Thomsen
 Parent class of the fiducial and grid pipelines
 """
 
-import tensorflow as tf
+from typing import Union
+
+import torch
 import numpy as np
 import healpy as hp
 import warnings
@@ -41,6 +43,7 @@ class MSFMpipeline:
         apply_m_bias: bool = True,
         shape_noise_scale: float = 1.0,
         poisson_noise_scale: float = 1.0,
+        device: Union[str, torch.device] = "cpu",
     ):
         """Shared parameters are set up here.
 
@@ -62,15 +65,18 @@ class MSFMpipeline:
             return_cls (bool, optional): Whether to return the cls. Defaults to True.
             apply_m_bias (bool, optional): Whether to include the multiplicative shear bias. Defaults to True.
             shape_noise_scale (float, optional): Factor by which to multiply the shape noise. This could also be a
-                tf.Variable to change it according to a schedule during training. Set to None to not include any shape
+                torch.Tensor to change it according to a schedule during training. Set to None to not include any shape
                 noise. Defaults to 1.0.
             poisson_noise_scale (float, optional): Factor by which to multiply the Poisson noise. This could also be a
-                tf.Variable to change it according to a schedule during training. Set to None to not include any 
+                torch.Tensor to change it according to a schedule during training. Set to None to not include any
                 Poisson noise. Defaults to 1.0.
+            device (Union[str, torch.device], optional): Device for pipeline tensors derived from the configuration.
+                Defaults to CPU to keep preprocessing deterministic and avoid implicit GPU memory use.
         """
         # general constants
         self.conf = files.load_config(conf)
         self.params = parameters.get_parameters(params, self.conf)
+        self.device = torch.device(device)
 
         # function arguments
         self.apply_norm = apply_norm
@@ -79,8 +85,8 @@ class MSFMpipeline:
         if self.shape_noise_scale != 1.0 or self.poisson_noise_scale != 1.0:
             LOGGER.warning(f"The noise scaling is only implemented for the maps, not the power spectra")
         self.with_padding = with_padding
-        if isinstance(z_bin_inds, (list, np.ndarray, tf.Tensor)):
-            self.z_bin_inds = tf.constant(z_bin_inds, dtype=tf.int32)
+        if isinstance(z_bin_inds, (list, np.ndarray, torch.Tensor)):
+            self.z_bin_inds = torch.as_tensor(z_bin_inds, dtype=torch.int32, device=self.device)
         elif z_bin_inds is None:
             self.z_bin_inds = z_bin_inds
         else:
@@ -93,18 +99,19 @@ class MSFMpipeline:
         self.n_z_GC = len(self.conf["survey"]["GC"]["z_bins"])
 
         # pixel file
-        self.data_vec_pix, _, _, _ = files.load_pixel_file(self.conf)
+        data_vec_pix, _, _, _ = files.load_pixel_file(self.conf)
+        self.data_vec_pix = torch.as_tensor(data_vec_pix, dtype=torch.int64, device=self.device)
         self.n_dv_pix = len(self.data_vec_pix)
 
         masks_dict = files.get_tomo_dv_masks(self.conf)
-        self.masks_WL = tf.constant(masks_dict["WL"], dtype=tf.float32)
-        self.masks_GC = tf.constant(masks_dict["GC"], dtype=tf.float32)
+        self.masks_WL = torch.as_tensor(masks_dict["WL"], dtype=torch.float32, device=self.device)
+        self.masks_GC = torch.as_tensor(masks_dict["GC"], dtype=torch.float32, device=self.device)
 
         if not self.with_padding:
             # only keep indices that are in all (per tomographic bin and galaxy sample) masks
-            self.mask_total = tf.reduce_prod(tf.concat([self.masks_WL, self.masks_GC], axis=-1), axis=-1)
-            self.mask_total = tf.cast(self.mask_total, dtype=tf.bool)
-            self.patch_pix = tf.boolean_mask(self.data_vec_pix, self.mask_total, axis=0)
+            self.mask_total = torch.prod(torch.cat([self.masks_WL, self.masks_GC], dim=-1), dim=-1)
+            self.mask_total = self.mask_total.bool()
+            self.patch_pix = self.data_vec_pix[self.mask_total]
             self.n_patch_pix = len(self.patch_pix)
 
         # lensing
@@ -114,18 +121,24 @@ class MSFMpipeline:
             self.m_bias_dist = lensing.get_m_bias_distribution(self.conf)
         else:
             self.m_bias_dist = None
-        self.normalize_lensing = lambda lensing_dv: lensing_dv / tf.constant(
-            self.conf["analysis"]["normalization"]["WL"], dtype=tf.float32
+        self.norm_WL = torch.as_tensor(
+            self.conf["analysis"]["normalization"]["WL"], dtype=torch.float32, device=self.device
+        )
+        self.normalize_lensing = lambda lensing_dv: torch.as_tensor(lensing_dv, device=self.device) / self.norm_WL.to(
+            dtype=torch.as_tensor(lensing_dv).dtype
         )
 
         # clustering
         self.with_GC = with_GC
-        self.tomo_n_gal_maglim = tf.constant(self.conf["survey"]["GC"]["n_gal"]) * hp.nside2pixarea(
-            self.conf["analysis"]["n_side"], degrees=True
+        self.tomo_n_gal_maglim = torch.as_tensor(
+            self.conf["survey"]["GC"]["n_gal"], dtype=torch.float32, device=self.device
+        ) * hp.nside2pixarea(self.conf["analysis"]["n_side"], degrees=True)
+        self.norm_GC = torch.as_tensor(
+            self.conf["analysis"]["normalization"]["GC"], dtype=torch.float32, device=self.device
         )
-        self.normalize_clustering = lambda clustering_dv: clustering_dv / tf.constant(
-            self.conf["analysis"]["normalization"]["GC"], dtype=tf.float32
-        )
+        self.normalize_clustering = lambda clustering_dv: torch.as_tensor(
+            clustering_dv, device=self.device
+        ) / self.norm_GC.to(dtype=torch.as_tensor(clustering_dv).dtype)
 
         self.with_cross = with_cross
         if self.with_cross:
@@ -147,8 +160,13 @@ class MSFMpipeline:
         )
 
     def padded_dv_to_non_padded_patch(self, data_vector):
-        nest_patch = tf.gather(
-            data_vector, hp.ring2nest(nside=self.conf["analysis"]["n_side"], ipix=self.base_patch_pix), axis=1
+        data_vector = torch.as_tensor(data_vector, device=self.device)
+        patch_pix = torch.as_tensor(self.base_patch_pix, dtype=torch.int64, device=self.device)
+        nest_indices = torch.as_tensor(
+            hp.ring2nest(nside=self.conf["analysis"]["n_side"], ipix=patch_pix.cpu().numpy()),
+            dtype=torch.int64,
+            device=self.device,
         )
+        nest_patch = torch.index_select(data_vector, dim=1, index=nest_indices)
 
         return nest_patch
