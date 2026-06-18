@@ -23,6 +23,7 @@ Sample = Dict[str, Any]
 
 SCHEMA_VERSION = 1
 SCHEMA_VERSION_KEY = "schema_version"
+METADATA_SUFFIX = ".index"
 
 COSMO_KEY = "cosmo"
 CLS_KEY = "cls"
@@ -41,8 +42,8 @@ I_SOBOL_KEY = "i_sobol"
 I_SIGNAL_KEY = "i_signal"
 N_PARAMS_KEY = "n_params"
 N_PIX_KEY = "n_pix"
-N_Z_WL_KEY = "n_z_WL"
-N_Z_GC_KEY = "n_z_GC"
+N_Z_WL_KEY = "n_z_wl"
+N_Z_GC_KEY = "n_z_gc"
 N_Z_CROSS_MAP_KEY = "n_z_cross_map"
 N_NOISE_KEY = "n_noise"
 N_CLS_KEY = "n_cls"
@@ -57,13 +58,42 @@ CLS_METADATA_KEYS = (N_NOISE_KEY, N_CLS_KEY, N_Z_CROSS_KEY)
 PROBE_FLAG_KEYS = (WITH_LENSING_KEY, WITH_CLUSTERING_KEY, WITH_CROSS_KEY)
 
 
+def _resolve_sample_key(sample: Mapping[str, Any], key: str) -> str:
+    if key in sample:
+        return key
+    normalised = _normalise_key(key)
+    if normalised in sample:
+        return normalised
+    lower = normalised.lower()
+    for sample_key in sample:
+        if sample_key.lower() == lower:
+            return sample_key
+    raise KeyError(f"sample is missing key {key!r}")
+
+
 def _has_array_key(sample: Mapping[str, Any], key: str) -> bool:
     """Return whether ``sample`` contains an encoded or already-decoded array key."""
-    return key in sample or _normalise_key(key) in sample
+    try:
+        _resolve_sample_key(sample, key)
+    except KeyError:
+        return False
+    return True
+
+
+def _normalise_metadata_key(key: str) -> str:
+    return key.lower()
+
+
+def _metadata_key(key: str) -> str:
+    return f"{_normalise_metadata_key(key)}{METADATA_SUFFIX}"
+
+
+def _has_metadata_key(sample: Mapping[str, Any], key: str) -> bool:
+    return any(candidate in sample for candidate in (key, _metadata_key(key), f"{key}{METADATA_SUFFIX}"))
 
 
 def _missing_metadata_keys(sample: Mapping[str, Any], keys: Sequence[str]) -> Sequence[str]:
-    return tuple(key for key in keys if key not in sample)
+    return tuple(key for key in keys if not _has_metadata_key(sample, key))
 
 
 def _missing_array_keys(sample: Mapping[str, Any], keys: Sequence[str]) -> Sequence[str]:
@@ -180,14 +210,7 @@ def _set_array(sample: MutableMapping[str, Any], key: str, array: np.ndarray) ->
 
 
 def _get_array(sample: Mapping[str, Any], key: str, *, dtype: Optional[Any] = None) -> np.ndarray:
-    webdataset_key = _normalise_key(key)
-    if webdataset_key in sample:
-        array = _decode_npy(sample[webdataset_key])
-    elif key in sample:
-        # Be permissive for callers that have already decoded WebDataset samples.
-        array = _decode_npy(sample[key])
-    else:
-        raise KeyError(f"sample is missing array payload {webdataset_key!r}")
+    array = _decode_npy(sample[_resolve_sample_key(sample, key)])
 
     if dtype is not None:
         array = array.astype(dtype, copy=False)
@@ -208,10 +231,17 @@ def _to_int(value: Any) -> int:
     return int(value)
 
 
+def _set_metadata(sample: MutableMapping[str, Any], key: str, value: Any) -> None:
+    if isinstance(value, bool):
+        value = int(value)
+    sample[_metadata_key(key)] = int(value)
+
+
 def _metadata(sample: Mapping[str, Any], key: str) -> int:
-    if key not in sample:
-        raise KeyError(f"sample is missing metadata field {key!r}")
-    return _to_int(sample[key])
+    for candidate in (key, _metadata_key(key), f"{key}{METADATA_SUFFIX}"):
+        if candidate in sample:
+            return _to_int(sample[candidate])
+    raise KeyError(f"sample is missing metadata field {key!r}")
 
 
 def _parse_none_value(sample: Mapping[str, Any], key: str, value: Optional[int]) -> int:
@@ -275,39 +305,41 @@ def encode_grid_sample(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal
     ``kg_{i}``, ``dg_{i}``, and optionally ``xg_{i}``.  Arrays are stored under
     ``<field>.npy`` keys and scalar metadata keeps the stable field names.
     """
-    sample: Sample = {
-        SCHEMA_VERSION_KEY: SCHEMA_VERSION,
-        N_PARAMS_KEY: int(np.asarray(cosmo).shape[0]),
-        I_SOBOL_KEY: int(i_sobol),
-        I_SIGNAL_KEY: int(i_signal),
-        WITH_LENSING_KEY: kg is not None and sn_realz is not None,
-        WITH_CLUSTERING_KEY: dg is not None and pn_realz is not None,
-        WITH_CROSS_KEY: xg is not None and xn_realz is not None,
-    }
+    sample: Sample = {}
+    _set_metadata(sample, SCHEMA_VERSION_KEY, SCHEMA_VERSION)
+    _set_metadata(sample, N_PARAMS_KEY, int(np.asarray(cosmo).shape[0]))
+    _set_metadata(sample, I_SOBOL_KEY, i_sobol)
+    _set_metadata(sample, I_SIGNAL_KEY, i_signal)
+    _set_metadata(sample, WITH_LENSING_KEY, kg is not None and sn_realz is not None)
+    _set_metadata(sample, WITH_CLUSTERING_KEY, dg is not None and pn_realz is not None)
+    _set_metadata(sample, WITH_CROSS_KEY, xg is not None and xn_realz is not None)
     _set_array(sample, "cosmo", cosmo)
 
     if cls is not None:
         _set_array(sample, "cls", cls)
-        sample.update({N_NOISE_KEY: int(cls.shape[0]), N_CLS_KEY: int(cls.shape[1]), N_Z_CROSS_KEY: int(cls.shape[2])})
+        _set_metadata(sample, N_NOISE_KEY, int(cls.shape[0]))
+        _set_metadata(sample, N_CLS_KEY, int(cls.shape[1]))
+        _set_metadata(sample, N_Z_CROSS_KEY, int(cls.shape[2]))
 
     if kg is not None and sn_realz is not None:
         assert kg.shape == sn_realz.shape[1:]
-        sample.update({N_PIX_KEY: int(kg.shape[0]), N_Z_WL_KEY: int(kg.shape[1])})
+        _set_metadata(sample, N_PIX_KEY, int(kg.shape[0]))
+        _set_metadata(sample, N_Z_WL_KEY, int(kg.shape[1]))
         for i, sn in enumerate(sn_realz):
             _set_array(sample, f"kg_{i}", kg + sn)
 
     if dg is not None and pn_realz is not None:
         assert dg.shape == pn_realz.shape[1:]
         if kg is None:
-            sample[N_PIX_KEY] = int(dg.shape[0])
+            _set_metadata(sample, N_PIX_KEY, int(dg.shape[0]))
         else:
             assert kg.shape[0] == dg.shape[0]
-        sample[N_Z_GC_KEY] = int(dg.shape[1])
+        _set_metadata(sample, N_Z_GC_KEY, int(dg.shape[1]))
         for i, pn in enumerate(pn_realz):
             _set_array(sample, f"dg_{i}", dg + pn)
 
     if xg is not None and xn_realz is not None:
-        sample[N_Z_CROSS_MAP_KEY] = int(xg.shape[1])
+        _set_metadata(sample, N_Z_CROSS_MAP_KEY, int(xg.shape[1]))
         for i, xn in enumerate(xn_realz):
             _set_array(sample, f"xg_{i}", xg + xn)
 
@@ -414,19 +446,18 @@ def encode_fiducial_sample(
     assert len(bg_pert_labels) == len(bg_perts)
     assert len(sn_realz) == len(pn_realz) == cl_perts.shape[1]
 
-    sample: Sample = {
-        SCHEMA_VERSION_KEY: SCHEMA_VERSION,
-        N_PIX_KEY: int(kg_perts[0].shape[0]),
-        N_Z_WL_KEY: int(kg_perts[0].shape[1]),
-        N_Z_GC_KEY: int(dg_perts[0].shape[1]),
-        I_SIGNAL_KEY: int(i_signal),
-        N_NOISE_KEY: int(cl_perts.shape[1]),
-        N_CLS_KEY: int(cl_perts.shape[2]),
-        N_Z_CROSS_KEY: int(cl_perts.shape[3]),
-        WITH_LENSING_KEY: True,
-        WITH_CLUSTERING_KEY: True,
-        WITH_CROSS_KEY: False,
-    }
+    sample: Sample = {}
+    _set_metadata(sample, SCHEMA_VERSION_KEY, SCHEMA_VERSION)
+    _set_metadata(sample, N_PIX_KEY, int(kg_perts[0].shape[0]))
+    _set_metadata(sample, N_Z_WL_KEY, int(kg_perts[0].shape[1]))
+    _set_metadata(sample, N_Z_GC_KEY, int(dg_perts[0].shape[1]))
+    _set_metadata(sample, I_SIGNAL_KEY, i_signal)
+    _set_metadata(sample, N_NOISE_KEY, int(cl_perts.shape[1]))
+    _set_metadata(sample, N_CLS_KEY, int(cl_perts.shape[2]))
+    _set_metadata(sample, N_Z_CROSS_KEY, int(cl_perts.shape[3]))
+    _set_metadata(sample, WITH_LENSING_KEY, True)
+    _set_metadata(sample, WITH_CLUSTERING_KEY, True)
+    _set_metadata(sample, WITH_CROSS_KEY, False)
     _set_array(sample, "cls", cl_perts[0])
 
     for label, kg_pert, dg_pert, cl_pert in zip(cosmo_pert_labels, kg_perts, dg_perts, cl_perts):
