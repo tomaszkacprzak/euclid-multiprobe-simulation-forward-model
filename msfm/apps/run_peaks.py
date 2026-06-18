@@ -4,7 +4,7 @@
 Created December 2023
 Author: Arne Thomsen
 
-Evaluate the peaks from the .tfrecords files produced by the forward model pipelines. Based off
+Evaluate the peaks from the WebDataset .tar shards produced by the forward model pipelines. Based off
 https://github.com/des-science/y3-combined-peaks/blob/main/combined_peaks/weak_lensing/peaks/MPI_WL_peaks_fiducial.py
 by Virginia Ajani and run_power_spectra.py from this repo.
 
@@ -26,18 +26,18 @@ LOGGER = logger.get_logger(__file__)
 
 
 def get_tasks(args):
-    """Returns a list of task indices to be executed by the workers. Each index corresponds to a single .tfrecord file"""
+    """Returns a list of task indices to be executed by the workers. Each index corresponds to a single WebDataset .tar shard"""
     args = setup(args)
 
     # associate each file with a task
-    tfrecords = sorted(glob.glob(args.tfr_pattern))
-    indices = list(range(len(tfrecords)))
+    shards = sorted(glob.glob(args.wds_pattern))
+    indices = list(range(len(shards)))
 
     # only read three files in debug mode
     if args.debug:
         indices = indices[:3]
 
-    LOGGER.warning(f"Found {len(tfrecords)} files, running on the first {len(indices)} indices")
+    LOGGER.warning(f"Found {len(shards)} files, running on the first {len(indices)} indices")
 
     return indices
 
@@ -52,14 +52,14 @@ def resources(args):
     if args.simset == "fiducial":
         resource_dict = dict(main_memory=512, main_time=4, main_scratch=0, main_n_cores=8)
     elif args.simset == "grid":
-        # when there's 2500 .tfrecords, such that each only contains a single cosmology, the 4h timeframe fits easily
+        # when there are 2500 WebDataset .tar shards, such that each only contains a single cosmology, the 4h timeframe fits easily
         resource_dict = dict(main_memory=512, main_time=4, main_scratch=0, main_n_cores=8)
 
     return resource_dict
 
 
 def setup(args):
-    description = "evaluate the power spectra from the input pipelines"
+    description = "evaluate peak statistics from the input WebDataset pipelines"
     parser = argparse.ArgumentParser(description=description, add_help=True)
 
     parser.add_argument(
@@ -71,10 +71,19 @@ def setup(args):
         help="logging level",
     )
     parser.add_argument(
-        "--tfr_pattern",
+        "--wds_pattern",
+        "--pattern",
+        dest="wds_pattern",
         type=str,
-        required=True,
-        help="input root dir of the .tfrecords to construct the dataset",
+        default=None,
+        help="input glob pattern for WebDataset .tar shards to construct the dataset",
+    )
+    parser.add_argument(
+        "--tfr_pattern",
+        dest="deprecated_tfr_pattern",
+        type=str,
+        default=None,
+        help="deprecated alias for --wds_pattern/--pattern",
     )
     parser.add_argument(
         "--simset", type=str, default="grid", choices=("grid", "fiducial"), help="set of simulations to use"
@@ -83,7 +92,7 @@ def setup(args):
         "--dir_out",
         type=str,
         default="/pscratch/sd/a/athomsen/DESY3/grid",
-        help="output root dir of the .tfrecords",
+        help="output root dir for peak statistic .h5 files",
     )
     parser.add_argument(
         "--config",
@@ -101,6 +110,16 @@ def setup(args):
 
     args, _ = parser.parse_known_args(args)
 
+    if args.wds_pattern is None:
+        if args.deprecated_tfr_pattern is None:
+            parser.error("one of --wds_pattern/--pattern or deprecated --tfr_pattern is required")
+        LOGGER.warning("--tfr_pattern is deprecated; use --wds_pattern or --pattern for WebDataset .tar shards")
+        args.wds_pattern = args.deprecated_tfr_pattern
+    elif args.deprecated_tfr_pattern is not None:
+        parser.error("provide only one of --wds_pattern/--pattern or deprecated --tfr_pattern")
+
+    delattr(args, "deprecated_tfr_pattern")
+
     # print arguments
     logger.set_all_loggers_level(args.verbosity)
     for key, value in vars(args).items():
@@ -109,14 +128,14 @@ def setup(args):
     if not os.path.isdir(args.dir_out):
         input_output.robust_makedirs(args.dir_out)
 
-    assert args.simset in args.tfr_pattern
+    assert args.simset in args.wds_pattern
 
     return args
 
 
 def main(indices, args):
     args = setup(args)
-    tfrecords = sorted(glob.glob(args.tfr_pattern))
+    shards = sorted(glob.glob(args.wds_pattern))
 
     if args.debug:
         args.max_sleep = 0
@@ -169,19 +188,19 @@ def main(indices, args):
 
         return peaks
 
-    # index corresponds to a .tfrecord file ###########################################################################
+    # index corresponds to a WebDataset .tar shard ###########################################################################
     for index in indices:
         LOGGER.timer.start("index")
 
-        tfrecord = tfrecords[index]
-        LOGGER.info(f"Index {index} is reading from {tfrecord}")
+        shard = shards[index]
+        LOGGER.info(f"Index {index} is reading from {shard}")
 
         if args.simset == "grid":
             pipe = grid_pipeline.GridPipeline(
                 conf, with_lensing=True, with_clustering=True, with_padding=False, apply_norm=False
             )
             dset = pipe.get_dset(
-                tfr_pattern=tfrecord,
+                pattern=shard,
                 local_batch_size="cosmo",
                 noise_indices=n_noise_per_example,
                 n_readers=1,
@@ -229,7 +248,7 @@ def main(indices, args):
                 poisson_noise_scale=1.0,
             )
             dset = pipe.get_dset(
-                tfr_pattern=tfrecord,
+                pattern=shard,
                 local_batch_size=1,
                 noise_indices=n_noise_per_example,
                 n_readers=1,
@@ -243,7 +262,7 @@ def main(indices, args):
             i_noises = []
             # loop over individual examples
             for data_vector, (i_example, i_noise) in LOGGER.progressbar(
-                dset, total=n_examples_per_cosmo // len(tfrecords), desc="Loop over examples", at_level="info"
+                dset, total=n_examples_per_cosmo // len(shards), desc="Loop over examples", at_level="info"
             ):
                 # get rid of the batch dimension
                 i_examples.append(i_example[0])
@@ -257,7 +276,7 @@ def main(indices, args):
             i_examples = np.stack(i_examples, axis=0)
             i_noises = np.stack(i_noises, axis=0)
 
-            # save one .h5 file per input .tfrecord
+            # save one .h5 file per input WebDataset .tar shard
             with h5py.File(os.path.join(args.dir_out, f"fiducial_peaks_{index:06}.h5"), "w") as f:
                 f.create_dataset(name="peaks", data=peaks)
                 f.create_dataset(name="i_example", data=i_examples)
@@ -324,7 +343,7 @@ def merge(indices, args):
             f_combined.create_dataset(name="i_example", shape=(n_files * i_example_shape[0],) + i_example_shape[1:])
             f_combined.create_dataset(name="i_noise", shape=(n_files * i_noise_shape[0],) + i_noise_shape[1:])
 
-            # loop over the per .tfrecord file .h5 files
+            # loop over the per WebDataset .tar shard .h5 files
             for i, h5_file in LOGGER.progressbar(enumerate(h5_files), desc="loop over files", at_level="info"):
                 with h5py.File(h5_file, "r") as f:
                     peaks = f["peaks"][:]
