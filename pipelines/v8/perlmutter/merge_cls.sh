@@ -13,6 +13,6 @@ SIMSET="grid"
 
 srun --cpu-bind=cores \
     python ../../../msfm/apps/perlmutter/merge_${SIMSET}_cls.py \
-    --dir_out="/pscratch/sd/a/athomsen/DESY3/v8/linear_bias/tfrecords/${SIMSET}" \
+    --dir_out="/pscratch/sd/a/athomsen/DESY3/v8/linear_bias/webdatasets/${SIMSET}" \
     --config="/global/u2/a/athomsen/multiprobe-simulation-forward-model/configs/v8/linear_bias.yaml" \
     --file_suffix=""

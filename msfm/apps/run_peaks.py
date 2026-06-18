@@ -72,18 +72,9 @@ def setup(args):
     )
     parser.add_argument(
         "--wds_pattern",
-        "--pattern",
-        dest="wds_pattern",
         type=str,
-        default=None,
-        help="input glob pattern for WebDataset .tar shards to construct the dataset",
-    )
-    parser.add_argument(
-        "--tfr_pattern",
-        dest="deprecated_tfr_pattern",
-        type=str,
-        default=None,
-        help="deprecated alias for --wds_pattern/--pattern",
+        required=True,
+        help="input root dir of the WebDataset shards to construct the dataset",
     )
     parser.add_argument(
         "--simset", type=str, default="grid", choices=("grid", "fiducial"), help="set of simulations to use"
