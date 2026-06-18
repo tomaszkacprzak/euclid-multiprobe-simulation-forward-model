@@ -13,8 +13,9 @@ https://www.tensorflow.org/tutorials/load_data/tfrecord
 https://towardsdatascience.com/a-practical-guide-to-tfrecords-584536bc786c
 """
 
+import importlib
+import importlib.util
 import warnings
-import tensorflow as tf
 import numpy as np
 
 from msfm.utils import logger, cross_statistics
@@ -24,6 +25,25 @@ warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
 
+
+_TF_IMPORT_ERROR = "Legacy TFRecord support requires tensorflow; use WebDataset shards for PyTorch runtime."
+
+
+def require_tensorflow():
+    """Import TensorFlow only when a legacy TFRecord utility is actually used."""
+    if importlib.util.find_spec("tensorflow") is None:
+        raise ImportError(_TF_IMPORT_ERROR)
+    return importlib.import_module("tensorflow")
+
+
+class _LazyTensorFlow:
+    """Proxy that keeps importing this legacy module TensorFlow-free."""
+
+    def __getattr__(self, name):
+        return getattr(require_tensorflow(), name)
+
+
+tf = _LazyTensorFlow()
 
 
 def parse_forward_grid(kg, sn_realz, dg, pn_realz, cls, cosmo, i_sobol, i_signal, xg=None, xn_realz=None):
@@ -755,23 +775,22 @@ def parse_forward_onthefly(γg, γa, γd, ds, dg, qg, cosmo, i_sobol, i_signal):
     return example
 
 
-import numpy as np
-import tensorflow as tf
-
 
 # Defaults used when parsing from a tf.data pipeline.
 # These MUST match the dtype used when writing with tf.io.serialize_tensor.
 # If your arrays are float64, change these defaults to tf.float64,
 # or pass tensor_dtypes explicitly as shown in verify_tfrecord_onthefly.
-_DEFAULT_TENSOR_DTYPES = {
-    "cosmo": tf.float32,
-    "γg": tf.complex64,
-    "γa": tf.complex64,
-    "γd": tf.complex64,
-    "ds": tf.float32,
-    "dg": tf.float32,
-    "qg": tf.float32,
-}
+def _default_tensor_dtypes():
+    tf = require_tensorflow()
+    return {
+        "cosmo": tf.float32,
+        "γg": tf.complex64,
+        "γa": tf.complex64,
+        "γd": tf.complex64,
+        "ds": tf.float32,
+        "dg": tf.float32,
+        "qg": tf.float32,
+    }
 
 
 def parse_inverse_onthefly(serialized_example, tensor_dtypes=None):
@@ -791,7 +810,7 @@ def parse_inverse_onthefly(serialized_example, tensor_dtypes=None):
     Returns:
         dict: Parsed tensors and integer metadata.
     """
-    dtypes = dict(_DEFAULT_TENSOR_DTYPES)
+    dtypes = _default_tensor_dtypes()
     if tensor_dtypes is not None:
         dtypes.update({k: tf.as_dtype(v) for k, v in tensor_dtypes.items()})
 

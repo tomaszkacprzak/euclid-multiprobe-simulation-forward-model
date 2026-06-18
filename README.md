@@ -20,12 +20,12 @@ Requires Python >= 3.8 and WebDataset for the runtime data path. TensorFlow >= 2
 uv pip install -e .
 ```
 
-*On systems without TensorFlow*:
+*Legacy TFRecord utilities only*:
 ```bash
 uv pip install -e .[tf]
 ```
 
-Use the optional TensorFlow extra only when TensorFlow is not already available via system modules (e.g., `module load tensorflow`) and you need legacy TFRecord utilities. The WebDataset runtime path does not require adding TensorFlow-only TFRecord dependencies.
+Use the optional TensorFlow extra only when TensorFlow is not already available via system modules (e.g., `module load tensorflow`) and you need legacy TFRecord utilities. The supported preprocessing output is WebDataset `.tar` shards; do not create new TFRecord outputs for the PyTorch runtime. The WebDataset runtime path does not require adding TensorFlow-only TFRecord dependencies.
 
 ## Repository Structure
 
