@@ -83,6 +83,10 @@ class GridPipeline(MSFMpipeline):
             poisson_noise_scale=1.0,
         )
 
+        # Base pipeline stores the probe flags under the historical names; keep readable aliases for WebDataset code.
+        self.with_lensing = self.with_WL
+        self.with_clustering = self.with_GC
+
         # used to return the correct labels
         self.all_params = parameters.get_parameters(conf=conf)
 
@@ -288,8 +292,8 @@ class GridPipeline(MSFMpipeline):
                             n_params=self.n_all_params,
                             n_noise=self.n_noise_total,
                             n_cls=self.n_cls,
-                            with_lensing=self.with_lensing,
-                            with_clustering=self.with_clustering,
+                            with_lensing=self._has_lensing(),
+                            with_clustering=self._has_clustering(),
                             with_cross=self.with_cross,
                             return_maps=self.return_maps,
                             return_cls=self.return_cls,
@@ -298,41 +302,8 @@ class GridPipeline(MSFMpipeline):
                 if is_eval:
                     break
 
-        else:
-            interleave_func = tf.data.TFRecordDataset
-
-        dset = dset.interleave(
-            interleave_func,
-            cycle_length=n_readers,
-            block_length=1,
-            num_parallel_calls=n_file_workers,
-            deterministic=is_eval,
-        )
-        LOGGER.info(f"Interleaving with n_readers = {n_readers}")
-
-        # parse, output signature (data_vectors, index), where data_vectors is a dict
-        dset = dset.map(
-            lambda serialized_example: tfrecords.parse_inverse_grid(
-                serialized_example,
-                noise_indices,
-                # dimensions
-                n_pix=self.n_dv_pix,
-                n_z_WL=self.n_z_WL,
-                n_z_GC=self.n_z_GC,
-                n_z_cross=self.n_z_cross,
-                n_params=self.n_all_params,
-                n_noise=self.n_noise_total,
-                n_cls=self.n_cls,
-                # map types
-                with_WL=self.with_WL,
-                with_GC=self.with_GC,
-                with_cross=self.with_cross,
-                # outputs
-                return_maps=self.return_maps,
-                return_cls=self.return_cls,
-            ),
-            num_parallel_calls=n_parse_workers,
-        )
+        dset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
+        LOGGER.info(f"Reading {len(file_names)} WebDataset shards with Python generator")
 
         # map a single example to len(noise_indices) examples corresponding to different noise realizations
         # NOTE that interleaving with cycle_lengths > 1 doesn't improve performance, so we use flat_map
@@ -380,13 +351,19 @@ class GridPipeline(MSFMpipeline):
         LOGGER.info(f"Successfully generated the grid set with element_spec {dset.element_spec}")
         return dset
 
+    def _has_lensing(self) -> bool:
+        return self.with_lensing if hasattr(self, "with_lensing") else self.with_WL
+
+    def _has_clustering(self) -> bool:
+        return self.with_clustering if hasattr(self, "with_clustering") else self.with_GC
+
     def _grid_float_keys(self, noise_indices: Union[list, range]) -> list:
         keys = ["cosmo"]
         if self.return_maps:
             for i in noise_indices:
-                if self.with_lensing:
+                if self._has_lensing():
                     keys.append(f"kg_{i}")
-                if self.with_clustering:
+                if self._has_clustering():
                     keys.append(f"dg_{i}")
                 if self.with_cross:
                     keys.append(f"xg_{i}")
@@ -409,12 +386,12 @@ class GridPipeline(MSFMpipeline):
 
         if self.return_maps:
             # separate the noise realizations
-            if self.with_WL:
+            if self._has_lensing():
                 kg = []
                 for i in noise_indices:
                     kg.append(data_vectors.pop(f"kg_{i}"))
 
-            if self.with_GC:
+            if self._has_clustering():
                 dg = []
                 for i in noise_indices:
                     dg.append(data_vectors.pop(f"dg_{i}"))
@@ -437,9 +414,9 @@ class GridPipeline(MSFMpipeline):
 
         if self.return_maps:
             # update the dictionary
-            if self.with_WL:
+            if self._has_lensing():
                 data_vectors["kg"] = kg
-            if self.with_GC:
+            if self._has_clustering():
                 data_vectors["dg"] = dg
             if self.with_cross:
                 data_vectors["xg"] = xg
@@ -487,7 +464,7 @@ class GridPipeline(MSFMpipeline):
             cosmo = tf.gather(cosmo, [self.all_params.index(param) for param in self.params], axis=1)
 
             if self.return_maps:
-                if self.with_WL:
+                if self._has_lensing():
                     # normalization
                     if self.apply_norm:
                         data_vectors["kg"] = self.normalize_lensing(data_vectors["kg"])
@@ -497,7 +474,7 @@ class GridPipeline(MSFMpipeline):
 
                     map_tensor = data_vectors["kg"]
 
-                if self.with_GC:
+                if self._has_clustering():
                     # normalization
                     if self.apply_norm:
                         data_vectors["dg"] = self.normalize_clustering(data_vectors["dg"])
@@ -517,7 +494,7 @@ class GridPipeline(MSFMpipeline):
 
                     map_tensor = data_vectors["xg"]
 
-                if self.with_WL and self.with_GC:
+                if self._has_lensing() and self._has_clustering():
                     # concatenate along the tomography axis
                     map_tensor = tf.concat([data_vectors["kg"], data_vectors["dg"]], axis=-1)
 
