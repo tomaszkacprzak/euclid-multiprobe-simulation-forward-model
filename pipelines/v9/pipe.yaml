@@ -1,27 +1,27 @@
 # this is meant for Perlmutter, not Euler
 
 # postprocessing
-- name: fiducial_tfrecords
+- name: fiducial_webdatasets
   cmd: esub ../msfm/apps/run_fiducial_postprocessing.py \
     --n_files=1000 \
     --config=../configs/v9/linear_bias.yaml \
     --dir_in=/global/cfs/cdirs/des/cosmogrid/v11desy3/CosmoGrid/v11desy3 \
-    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v9/linear_bias/tfrecords/fiducial \
+    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v9/linear_bias/webdatasets/fiducial \
     --cosmogrid_version="1.1" \
     --mode=jobarray --function=all --n_jobs=1000 --max_njobs=1000 --tasks="0>1000" --keep_submit_files \
-    --job_name=tfr_fidu_v9 --log_dir=/pscratch/sd/a/athomsen/run_files/v9/esub_logs \
+    --job_name=wds_fidu_v9 --log_dir=/pscratch/sd/a/athomsen/run_files/v9/esub_logs \
     --system=slurm --source_file=../pipelines/v9/perlmutter_setup.sh \
     --additional_slurm_args="--account=des,--constraint=cpu,--qos=shared,--licenses=cfs,--licenses=scratch"
 
-- name: grid_tfrecords
+- name: grid_webdatasets
   cmd: esub ../msfm/apps/run_grid_postprocessing.py \
     --n_files=2500 \
     --config=../configs/v9/linear_bias.yaml \
     --dir_in=/global/cfs/cdirs/des/cosmogrid/v11desy3/CosmoGrid/v11desy3 \
-    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v9/linear_bias/tfrecords/grid \
+    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v9/linear_bias/webdatasets/grid \
     --cosmogrid_version="1.1" \
     --mode=jobarray --function=all --n_jobs=2500 --max_njobs=1000 --tasks="0>2500" --keep_submit_files \
-    --job_name=tfr_grid_v9 --log_dir=/pscratch/sd/a/athomsen/run_files/v9/esub_logs \
+    --job_name=wds_grid_v9 --log_dir=/pscratch/sd/a/athomsen/run_files/v9/esub_logs \
     --system=slurm --source_file=../pipelines/v9/perlmutter_setup.sh \
     --additional_slurm_args="--account=des,--constraint=cpu,--qos=shared,--licenses=cfs,--licenses=scratch"
 
@@ -35,24 +35,24 @@
     --additional_slurm_args="--account=des,--constraint=cpu,--qos=shared,--licenses=cfs,--licenses=scratch"
 
 # UNFAVORED postprocessing, --qos=regular
-- name: fiducial_tfrecords
+- name: fiducial_webdatasets
   cmd: esub ../msfm/apps/run_fiducial_postprocessing.py \
     --n_files=1000 \
     --config=../configs/v9/linear_bias.yaml \
     --dir_in=/global/cfs/cdirs/des/cosmogrid/v11desy3 \
-    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v9/linear_bias/tfrecords/fiducial \
+    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v9/linear_bias/webdatasets/fiducial \
     --cosmogrid_version="1.1" \
     --mode=jobarray --function=all --n_jobs=1000 --max_nnodes=100 --tasks="0>1000" --per_node_accounting \
-    --job_name=tfr_fidu_v9_node --system=slurm --source_file=../pipelines/v9/perlmutter_setup.sh \
+    --job_name=wds_fidu_v9_node --system=slurm --source_file=../pipelines/v9/perlmutter_setup.sh \
     --additional_slurm_args="--account=des,--constraint=cpu,--qos=regular" --keep_submit_files
 
-- name: grid_tfrecords
+- name: grid_webdatasets
   cmd: esub ../msfm/apps/run_grid_postprocessing.py \
     --n_files=2500 \
     --config=../configs/v9/linear_bias.yaml \
     --dir_in=/global/cfs/cdirs/des/cosmogrid/v11desy3 \
-    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v9/linear_bias/tfrecords/grid \
+    --dir_out=/pscratch/sd/a/athomsen/v11desy3/v9/linear_bias/webdatasets/grid \
     --cosmogrid_version="1.1" \
     --mode=jobarray --function=all --n_jobs=2500 --max_nnodes=100 --tasks="0>2500" --per_node_accounting \
-    --job_name=tfr_grid_v9_node --system=slurm --source_file=../pipelines/v9/perlmutter_setup.sh \
+    --job_name=wds_grid_v9_node --system=slurm --source_file=../pipelines/v9/perlmutter_setup.sh \
     --additional_slurm_args="--account=des,--constraint=cpu,--qos=regular" --keep_submit_files

@@ -8,18 +8,18 @@
 - name: grid_dv
   cmd: esub msfm/apps/run_datavectors.py --simset=grid --config=configs/v7/linear_bias.yaml --dir_in=/cluster/scratch/athomsen/CosmoGrid/grid --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/grid --mode=jobarray --function=all --n_jobs=2500 --tasks="0>2500" --job_name=dv_grid --system=slurm
 
-# .tfrecord
-- name: fiducial_tfr
+# .tar
+- name: fiducial_webdatasets
   dep: fiducial_dv
-  cmd: esub msfm/apps/run_fiducial_tfrecords.py --n_files=200 --config=configs/v7/linear_bias.yaml --dir_in=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/fiducial --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/tfrecords/fiducial --mode=jobarray --function=all --n_jobs=200 --tasks="0>200" --job_name=tfr_fidu --system=slurm
+  cmd: esub msfm/apps/run_fiducial_preprocessing.py --n_files=200 --config=configs/v7/linear_bias.yaml --dir_in=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/fiducial --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/webdatasets/fiducial --mode=jobarray --function=all --n_jobs=200 --tasks="0>200" --job_name=wds_fidu --system=slurm
 
-- name: grid_tfr
+- name: grid_webdatasets
   dep: grid_dv
-  cmd: esub msfm/apps/run_grid_tfrecords.py --n_files=2500 --config=configs/v7/linear_bias.yaml --dir_in=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/grid --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/tfrecords/grid --mode=jobarray --function=all --n_jobs=2500 --tasks="0>2500" --job_name=tfr_grid --system=slurm
+  cmd: esub msfm/apps/run_grid_preprocessing.py --n_files=2500 --config=configs/v7/linear_bias.yaml --dir_in=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/grid --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/webdatasets/grid --mode=jobarray --function=all --n_jobs=2500 --tasks="0>2500" --job_name=wds_grid --system=slurm
 
 # peaks
 - name: fiducial_peaks
-  cmd: esub msfm/apps/run_peaks.py --simset=fiducial --config=configs/v7/linear_bias.yaml --tfr_pattern="/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/tfrecords/fiducial/DESy3_fiducial_????.tfrecord" --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/peaks --mode=jobarray --function=all --job_name=peaks_fidu --system=slurm
+  cmd: esub msfm/apps/run_peaks.py --simset=fiducial --config=configs/v7/linear_bias.yaml --wds_pattern="/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/webdatasets/fiducial/DESy3_fiducial_????.tar" --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/peaks --mode=jobarray --function=all --job_name=peaks_fidu --system=slurm
 
 - name: grid_peaks
-  cmd: esub msfm/apps/run_peaks.py --simset=grid --config=configs/v7/linear_bias.yaml --tfr_pattern="/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/tfrecords/grid/DESy3_grid_????.tfrecord" --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/peaks --mode=jobarray --function=all --job_name=peaks_grid --system=slurm
+  cmd: esub msfm/apps/run_peaks.py --simset=grid --config=configs/v7/linear_bias.yaml --wds_pattern="/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/webdatasets/grid/DESy3_grid_????.tar" --dir_out=/cluster/work/refregier/athomsen/CosmoGrid/DESY3/v7/linear_bias/peaks --mode=jobarray --function=all --job_name=peaks_grid --system=slurm
