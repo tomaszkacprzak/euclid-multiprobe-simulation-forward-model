@@ -13,6 +13,7 @@ from typing import Union
 import webdataset
 from torch.utils.data import DataLoader
 from msfm.utils import logger
+from msfm.utils.torch_datasets import ONTHEFLY_TUPLE_KEYS, make_msfm_collate_fn
 import glob
 
 
@@ -71,11 +72,21 @@ class OntheflyPipeline():
         self,
         webds_pattern: str,
         batch_size: int,
+        float_dtype=None,
     ):
         """Builds the data loader from the given dataset and performance related parameters.
+
+        The custom collate function returns dictionary batches, casts floating
+        arrays to ``torch.float32`` by default, and casts metadata indices to
+        ``torch.int64``. Pass ``float_dtype`` to intentionally override the
+        floating-point dtype.
         """
 
         dataset = self.get_dataset(webds_pattern)
-        loader = DataLoader(dataset, batch_size=batch_size, num_workers=8, pin_memory=True)
+        if float_dtype is None:
+            collate_fn = make_msfm_collate_fn(tuple_keys=ONTHEFLY_TUPLE_KEYS)
+        else:
+            collate_fn = make_msfm_collate_fn(float_dtype=float_dtype, tuple_keys=ONTHEFLY_TUPLE_KEYS)
+        loader = DataLoader(dataset, batch_size=batch_size, num_workers=8, pin_memory=True, collate_fn=collate_fn)
 
         return loader
