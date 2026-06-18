@@ -11,18 +11,18 @@ This repository provides a pipeline to forward model Euclid-like weak lensing an
 
 ## Installation
 
-Requires Python >= 3.8 and WebDataset for the runtime data path. TensorFlow >= 2.0 and TensorFlow-Probability are optional and only needed for legacy TFRecord utilities or environments that still run TensorFlow-based preprocessing.
+Requires Python >= 3.8. The primary runtime path uses PyTorch for tensors/data loading and WebDataset tar shards for storage. Both `torch` and `webdataset` are installed with the base package.
 
 **Step 1: Install this package**
 
-*Runtime / WebDataset path* (recommended):
+*PyTorch + WebDataset runtime path* (recommended):
 ```bash
 uv pip install -e .
 ```
 
 *Legacy TFRecord utilities only*:
 ```bash
-uv pip install -e .[tf]
+uv pip install -e .[legacy-tfrecord]
 ```
 
 Use the optional TensorFlow extra only when TensorFlow is not already available via system modules (e.g., `module load tensorflow`) and you need legacy TFRecord utilities. The supported preprocessing output is WebDataset `.tar` shards; do not create new TFRecord outputs for the PyTorch runtime. The WebDataset runtime path does not require adding TensorFlow-only TFRecord dependencies.

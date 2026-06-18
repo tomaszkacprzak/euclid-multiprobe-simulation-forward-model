@@ -11,7 +11,10 @@ by Janis Fluri
 
 import glob
 import random
-import tensorflow as tf
+import numpy as np
+import torch
+from torch.utils.data import IterableDataset
+
 import warnings
 from typing import Union
 
@@ -28,7 +31,7 @@ LOGGER = logger.get_logger(__file__)
 
 class GridPipeline(MSFMpipeline):
     """
-    Sets up a tf.data.Dataset for the grid cosmologies.
+    Sets up a PyTorch/WebDataset loader for the grid cosmologies.
     """
 
     def __init__(
@@ -77,7 +80,7 @@ class GridPipeline(MSFMpipeline):
             z_bin_inds=z_bin_inds,
             return_maps=return_maps,
             return_cls=return_cls,
-            # these are fixed in the .tfrecord files
+            # these are fixed in the WebDataset samples
             apply_m_bias=False,
             shape_noise_scale=1.0,
             poisson_noise_scale=1.0,
@@ -147,13 +150,19 @@ class GridPipeline(MSFMpipeline):
         file_name_shuffle_seed: int = 11,
         examples_shuffle_seed: int = 12,
         # distribution
-        input_context: tf.distribute.InputContext = None,
+        input_context=None,
+        shuffle: bool = None,
+        repeat: bool = None,
         tfr_pattern: str = None,
         # nside downsampling
         downsample_nside: int = None,
         parent_output_idx=None,
-    ) -> tf.data.Dataset:
-        """Builds the tf.data.Dataset from the given file name pattern and performance related parameters.
+    ) -> wds.WebLoader:
+        """Builds a WebDataset-backed PyTorch WebLoader from the given file name pattern and performance parameters.
+
+        Compatibility note: this method name is kept for existing callers, but it now returns a
+        :class:`webdataset.WebLoader` whose batches are dictionaries of ``torch.Tensor`` objects instead of a
+        ``tf.data.Dataset`` yielding tuple outputs.
 
         Args:
             pattern (str): Glob pattern of the fiducial WebDataset .tar shards.
@@ -196,22 +205,25 @@ class GridPipeline(MSFMpipeline):
                         )
 
         Returns:
-            tf.data.Dataset: A deterministic dataset that goes through the grid cosmologies in the order of the sobol
-                seeds. The output is a tuple like (data_vectors, cosmo, index), where data_vectors is a tensor of shape
-            (batch_size, n_pix, n_z_WL + n_z_GC), cosmo is a label distributed on the Sobol sequence and index
-            is a tuple containing (i_sobol, i_signal, i_noise).
+            webdataset.WebLoader: An iterable PyTorch loader. Each batch is a dictionary containing torch tensors,
+            including ``maps`` (when requested), ``cls`` (when requested), ``cosmo``, ``i_sobol``, ``i_signal``, and
+            ``i_noise``.
         """
 
         if is_eval:
-            tf.random.set_seed(eval_seed)
+            torch.manual_seed(eval_seed)
+
+        if shuffle is None:
+            shuffle = not is_eval
+        if repeat is None:
+            repeat = not is_eval
 
         # parallelization
         if n_workers is None:
-            LOGGER.info(f"n_workers is not set, using tf.data.AUTOTUNE. This might produce unexpected RAM usage.")
-            n_augment_workers = tf.data.AUTOTUNE
+            n_workers = 0
+            LOGGER.info("n_workers is not set, using single-process PyTorch loading")
         else:
-            n_augment_workers = max((n_workers - n_readers) // 2, 1)
-            LOGGER.info(f"Using n_augment_workers = {n_augment_workers}")
+            LOGGER.info(f"Using n_workers = {n_workers} for PyTorch loading")
 
         # batching
         if drop_remainder is None:
@@ -269,87 +281,50 @@ class GridPipeline(MSFMpipeline):
             assert n_readers == 1, f"Can only read from a single file concurrently when local_batch_size = 'cosmo'"
             assert is_eval, f"The 'cosmo' batching is only for validation"
 
-        output_signature = {
-            key: tf.TensorSpec(shape=None, dtype=tf.float32) for key in self._grid_float_keys(noise_indices)
-        }
-        output_signature["i_sobol"] = tf.TensorSpec(shape=(), dtype=tf.int64)
-        output_signature["i_signal"] = tf.TensorSpec(shape=(), dtype=tf.int64)
+        dataset = _GridWebDatasetIterable(
+            file_names=file_names,
+            pipeline=self,
+            noise_indices=noise_indices,
+            signal_indices=signal_indices,
+            repeat=repeat,
+            shuffle_examples=shuffle,
+            examples_shuffle_seed=examples_shuffle_seed,
+            examples_shuffle_buffer=examples_shuffle_buffer,
+        )
+        LOGGER.info(f"Reading {len(file_names)} WebDataset shards with PyTorch IterableDataset")
 
-        def generator():
-            while True:
-                for file_name in file_names:
-                    for i_signal_in_file, sample in enumerate(wds.WebDataset([file_name], shardshuffle=False)):
-                        if signal_indices is not None and i_signal_in_file not in signal_indices:
-                            continue
-                        decoded = webdatasets.decode_grid_sample(
-                            sample,
-                            noise_indices,
-                            n_pix=self.n_dv_pix,
-                            n_z_WL=self.n_z_WL,
-                            n_z_GC=self.n_z_GC,
-                            n_z_cross_map=self.n_z_cross,
-                            n_z_cross=self.n_z_cross,
-                            n_params=self.n_all_params,
-                            n_noise=self.n_noise_total,
-                            n_cls=self.n_cls,
-                            with_lensing=self._has_lensing(),
-                            with_clustering=self._has_clustering(),
-                            with_cross=self.with_cross,
-                            return_maps=self.return_maps,
-                            return_cls=self.return_cls,
-                        )
-                        yield {key: tf.convert_to_tensor(value) for key, value in decoded.items()}
-                if is_eval:
-                    break
-
-        dset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
-        LOGGER.info(f"Reading {len(file_names)} WebDataset shards with Python generator")
-
-        # map a single example to len(noise_indices) examples corresponding to different noise realizations
-        # NOTE that interleaving with cycle_lengths > 1 doesn't improve performance, so we use flat_map
-        dset = dset.flat_map(lambda data_vectors: self._split_noise_realizations(data_vectors, noise_indices))
-
-        # shuffle the examples
-        if not is_eval:
-            dset = dset.shuffle(examples_shuffle_buffer, seed=examples_shuffle_seed)
-            LOGGER.info(f"Shuffling examples with shuffle_buffer = {examples_shuffle_buffer}")
-
-        # batch (first, for vectorization)
         if local_batch_size == "cosmo":
             local_batch_size = len(signal_indices) * len(noise_indices)
-            LOGGER.info(f"The dset is batched by cosmology")
-        dset = dset.batch(local_batch_size, drop_remainder=drop_remainder)
-        LOGGER.info(f"Batching into {local_batch_size} elements locally")
+            LOGGER.info("The dset is batched by cosmology")
 
-        # augmentations (all in one function, to make parallelization faster)
-        dset = dset.map(
-            self._augmentations,
-            num_parallel_calls=n_augment_workers,
+        def _collate_and_augment(samples):
+            batch = self._collate_samples(samples)
+            batch = self._augmentations(batch)
+
+            if downsample_nside is not None and parent_output_idx is not None and batch.get("maps") is not None:
+                parent_output_idx_t = torch.as_tensor(parent_output_idx, dtype=torch.long)
+                n_pix_out = int(parent_output_idx_t.max().item()) + 1
+                batch["maps"] = _unsorted_segment_mean(batch["maps"], parent_output_idx_t, n_pix_out, dim=1)
+
+            return batch
+
+        loader = wds.WebLoader(
+            dataset,
+            batch_size=local_batch_size,
+            shuffle=False,
+            num_workers=n_workers,
+            drop_last=drop_remainder,
+            collate_fn=_collate_and_augment,
         )
 
-        # optional nside downsampling (e.g. for faster smoothing at low nside)
+        if n_prefetch not in (None, 0):
+            LOGGER.info("n_prefetch is accepted for compatibility but WebLoader prefetching is controlled by workers")
+
         if downsample_nside is not None and parent_output_idx is not None:
-            parent_output_idx_tf = tf.constant(parent_output_idx, dtype=tf.int32)
-            n_pix_out = int(parent_output_idx.max()) + 1
+            LOGGER.info(f"Downsampling maps to nside={downsample_nside} ({int(np.max(parent_output_idx)) + 1} pixels)")
 
-            def _downsample_dv(dv, *rest):
-                # dv: (batch, n_pix_in, n_channels) → (batch, n_pix_out, n_channels)
-                dv_t = tf.transpose(dv, perm=[1, 0, 2])  # (n_pix_in, batch, n_channels)
-                dv_down_t = tf.math.unsorted_segment_mean(dv_t, parent_output_idx_tf, n_pix_out)
-                return (tf.transpose(dv_down_t, perm=[1, 0, 2]), *rest)
-
-            dset = dset.map(_downsample_dv, num_parallel_calls=n_augment_workers, deterministic=is_eval)
-            LOGGER.info(f"Downsampling maps to nside={downsample_nside} ({n_pix_out} pixels)")
-
-        # prefetch
-        if n_prefetch != 0:
-            if n_prefetch is None:
-                n_prefetch = tf.data.AUTOTUNE
-            dset = dset.prefetch(n_prefetch)
-            LOGGER.info(f"Prefetching {n_prefetch} elements")
-
-        LOGGER.info(f"Successfully generated the grid set with element_spec {dset.element_spec}")
-        return dset
+        LOGGER.info("Successfully generated the grid WebLoader")
+        return loader
 
     def _has_lensing(self) -> bool:
         return self.with_lensing if hasattr(self, "with_lensing") else self.with_WL
@@ -371,152 +346,181 @@ class GridPipeline(MSFMpipeline):
             keys.extend(f"cl_{i}" for i in noise_indices)
         return keys
 
-    def _split_noise_realizations(self, data_vectors: dict, noise_indices: Union[list, range]) -> tf.data.Dataset:
-        """Split the dictionary stored within the .tfrecord files into the separate noise realizations stored within.
-        In this way, a single element of the dataset is mapped to a new dataset. Therefore, this function should be
-        applied as flat_map or interleave.
+    def _collate_samples(self, samples: list) -> dict:
+        keys = samples[0].keys()
+        return {key: torch.stack([sample[key] for sample in samples], dim=0) for key in keys}
 
-        Args:
-            data_vectors (dict): Full dictionary containing all noisy kg and dg maps, i_sobol and i_signal indices.
-            noise_indices (list, range): The noise indices to return.
+    def _normalization_tensor(self, probe: str, reference: torch.Tensor) -> torch.Tensor:
+        value = self.conf.get("analysis", {}).get("normalization", {}).get(probe, 1.0)
+        return torch.as_tensor(value, dtype=reference.dtype, device=reference.device)
 
-        Returns:
-            tf.data.Dataset: Dataset containing the separate noise realizations.
+    def _augmentations(self, data_vectors: dict) -> dict:
+        """Apply map/cls preprocessing with PyTorch and return a dictionary batch.
+
+        Compatibility note: this method name is retained from the TensorFlow pipeline, but it now accepts and returns
+        PyTorch tensor dictionaries. The output dictionary contains ``maps`` and/or ``cls`` plus label/index tensors.
         """
+        cosmo = data_vectors.pop("cosmo")
+        param_indices = torch.as_tensor([self.all_params.index(param) for param in self.params], dtype=torch.long)
+        cosmo = torch.index_select(cosmo, dim=1, index=param_indices)
 
         if self.return_maps:
-            # separate the noise realizations
+            map_tensor = None
             if self._has_lensing():
-                kg = []
-                for i in noise_indices:
-                    kg.append(data_vectors.pop(f"kg_{i}"))
+                if self.apply_norm:
+                    data_vectors["kg"] = data_vectors["kg"] / self._normalization_tensor("WL", data_vectors["kg"])
+                data_vectors["kg"] = data_vectors["kg"] * _as_torch(self.masks_WL, dtype=data_vectors["kg"].dtype)
+                map_tensor = data_vectors["kg"]
 
             if self._has_clustering():
-                dg = []
-                for i in noise_indices:
-                    dg.append(data_vectors.pop(f"dg_{i}"))
+                if self.apply_norm:
+                    data_vectors["dg"] = data_vectors["dg"] / self._normalization_tensor("GC", data_vectors["dg"])
+                data_vectors["dg"] = data_vectors["dg"] * _as_torch(self.masks_GC, dtype=data_vectors["dg"].dtype)
+                map_tensor = data_vectors["dg"]
 
             if self.with_cross:
-                xg = []
-                for i in noise_indices:
-                    xg.append(data_vectors.pop(f"xg_{i}"))
+                mask_wl = _as_torch(self.masks_WL, dtype=data_vectors["xg"].dtype)
+                mask_gc = _as_torch(self.masks_GC, dtype=data_vectors["xg"].dtype)
+                mask = torch.prod(mask_wl, dim=-1) * torch.prod(mask_gc, dim=-1)
+                data_vectors["xg"] = data_vectors["xg"] * torch.unsqueeze(mask, dim=-1)
+                map_tensor = data_vectors["xg"]
 
-        if self.return_cls:
-            cl = []
-            for i in noise_indices:
-                cl.append(data_vectors.pop(f"cl_{i}"))
+            if self._has_lensing() and self._has_clustering():
+                map_tensor = torch.cat([data_vectors["kg"], data_vectors["dg"]], dim=-1)
 
-        # repeat as often as there are different noise realizations
-        for key in data_vectors.keys():
-            # no action is necessary for the cls. They're already in this format right out of the WebDataset shards
-            if not "cl" in key:
-                data_vectors[key] = tf.repeat(tf.expand_dims(data_vectors[key], axis=0), len(noise_indices), axis=0)
+            if not self.with_padding:
+                mask_total = _as_torch(self.mask_total).bool()
+                map_tensor = map_tensor[:, mask_total, :]
 
+            if self.z_bin_inds is not None:
+                z_bin_inds = _as_torch(self.z_bin_inds, dtype=torch.long)
+                map_tensor = torch.index_select(map_tensor, dim=-1, index=z_bin_inds)
+        else:
+            map_tensor = None
+
+        batch = {
+            "cosmo": cosmo,
+            "i_sobol": data_vectors.pop("i_sobol"),
+            "i_signal": data_vectors.pop("i_signal"),
+            "i_noise": data_vectors.pop("i_noise"),
+        }
         if self.return_maps:
-            # update the dictionary
-            if self._has_lensing():
-                data_vectors["kg"] = kg
-            if self._has_clustering():
-                data_vectors["dg"] = dg
-            if self.with_cross:
-                data_vectors["xg"] = xg
-
+            batch["maps"] = map_tensor
         if self.return_cls:
-            data_vectors["cl"] = cl
+            batch["cls"] = data_vectors.pop("cl")
+        return batch
 
-        data_vectors["i_noise"] = list(noise_indices)
 
-        # return a dataset containing n_examples elements
-        return tf.data.Dataset.from_tensor_slices(data_vectors)
+class _GridWebDatasetIterable(IterableDataset):
+    """IterableDataset that expands each WebDataset grid sample over requested noise indices."""
 
-    def _augmentations(self, data_vectors: dict) -> tf.Tensor:
-        """Applies random augmentations and general pre-processing to the maps. This includes in order:
+    def __init__(
+        self,
+        file_names,
+        pipeline,
+        noise_indices,
+        signal_indices,
+        repeat,
+        shuffle_examples,
+        examples_shuffle_seed,
+        examples_shuffle_buffer,
+    ):
+        self.file_names = file_names
+        self.pipeline = pipeline
+        self.noise_indices = list(noise_indices)
+        self.signal_indices = set(signal_indices)
+        self.repeat = repeat
+        self.shuffle_examples = shuffle_examples
+        self.examples_shuffle_seed = examples_shuffle_seed
+        self.examples_shuffle_buffer = examples_shuffle_buffer
 
-        lensing
-        - Add the chosen shape noise realization to the kappa maps
-        - Reversibly normalize to roughly unit values
-        - Mask the resulting data vector
+    def __iter__(self):
+        epoch = 0
+        while True:
+            iterator = self._iter_once()
+            if self.shuffle_examples:
+                iterator = _shuffle_buffered(
+                    iterator, self.examples_shuffle_buffer, self.examples_shuffle_seed + epoch
+                )
+            yield from iterator
+            epoch += 1
+            if not self.repeat:
+                break
 
-        clustering
-        - Reversibly normalize to roughly unit values
-        - Mask the resulting data vector
+    def _iter_once(self):
+        for file_name in self.file_names:
+            for i_signal_in_file, sample in enumerate(wds.WebDataset([file_name], shardshuffle=False)):
+                if i_signal_in_file not in self.signal_indices:
+                    continue
+                decoded = webdatasets.decode_grid_sample(
+                    sample,
+                    self.noise_indices,
+                    n_pix=self.pipeline.n_dv_pix,
+                    n_z_WL=self.pipeline.n_z_WL,
+                    n_z_GC=self.pipeline.n_z_GC,
+                    n_z_cross_map=self.pipeline.n_z_cross,
+                    n_z_cross=self.pipeline.n_z_cross,
+                    n_params=self.pipeline.n_all_params,
+                    n_noise=self.pipeline.n_noise_total,
+                    n_cls=self.pipeline.n_cls,
+                    with_lensing=self.pipeline._has_lensing(),
+                    with_clustering=self.pipeline._has_clustering(),
+                    with_cross=self.pipeline.with_cross,
+                    return_maps=self.pipeline.return_maps,
+                    return_cls=self.pipeline.return_cls,
+                )
+                decoded = {key: _as_torch(value) for key, value in decoded.items()}
+                for i_noise in self.noise_indices:
+                    out = {
+                        "cosmo": decoded["cosmo"],
+                        "i_sobol": decoded["i_sobol"],
+                        "i_signal": decoded["i_signal"],
+                        "i_noise": torch.tensor(i_noise, dtype=torch.long),
+                    }
+                    if self.pipeline.return_maps:
+                        if self.pipeline._has_lensing():
+                            out["kg"] = decoded[f"kg_{i_noise}"]
+                        if self.pipeline._has_clustering():
+                            out["dg"] = decoded[f"dg_{i_noise}"]
+                        if self.pipeline.with_cross:
+                            out["xg"] = decoded[f"xg_{i_noise}"]
+                    if self.pipeline.return_cls:
+                        out["cl"] = decoded[f"cl_{i_noise}"]
+                    yield out
 
-        Concatenate both along the z bin axis.
 
-        Args:
-            data_vectors (dict): Depending on with_GC and with_WL, contains the tensors kg (sum of signal
-                and intrinsic alignment) and sn (single realization) of shape (n_pix, n_z_WL) and dg of shape
-                (n_pix, n_z_GC).
-            index (tuple): A tuple of two integers (i_sobol, i_noise).
+def _as_torch(value, dtype=None):
+    if isinstance(value, torch.Tensor):
+        tensor = value
+    elif hasattr(value, "numpy"):
+        tensor = torch.as_tensor(value.numpy())
+    else:
+        tensor = torch.as_tensor(value)
+    return tensor.to(dtype=dtype) if dtype is not None else tensor
 
-        Returns:
-            tuple: (out_tensor, cosmo, index) the elements of the dataset, where out_tensor has shape
-            (batch_size, n_pix, n_z_WL + n_z_GC), cosmo is a label distributed on the Sobol sequence and index
-            is a tuple containing (i_sobol, i_signal, i_noise).
-        """
-        LOGGER.warning(f"Tracing _augmentations")
-        LOGGER.info(f"Running on the data_vectors.keys() = {data_vectors.keys()}")
 
-        # to be explicit
-        with tf.device("/CPU:0"):
-            # label, cosmo params
-            cosmo = data_vectors.pop("cosmo")
-            cosmo = tf.gather(cosmo, [self.all_params.index(param) for param in self.params], axis=1)
+def _shuffle_buffered(iterator, buffer_size, seed):
+    rng = random.Random(seed)
+    buffer = []
+    for item in iterator:
+        buffer.append(item)
+        if len(buffer) >= buffer_size:
+            idx = rng.randrange(len(buffer))
+            yield buffer.pop(idx)
+    while buffer:
+        idx = rng.randrange(len(buffer))
+        yield buffer.pop(idx)
 
-            if self.return_maps:
-                if self._has_lensing():
-                    # normalization
-                    if self.apply_norm:
-                        data_vectors["kg"] = self.normalize_lensing(data_vectors["kg"])
 
-                    # masking
-                    data_vectors["kg"] *= self.masks_WL
-
-                    map_tensor = data_vectors["kg"]
-
-                if self._has_clustering():
-                    # normalization
-                    if self.apply_norm:
-                        data_vectors["dg"] = self.normalize_clustering(data_vectors["dg"])
-
-                    # masking
-                    data_vectors["dg"] *= self.masks_GC
-
-                    map_tensor = data_vectors["dg"]
-
-                if self.with_cross:
-                    # NOTE no normalization
-
-                    # masking NOTE this assumes a single mask per tomographic bin
-                    mask = tf.math.reduce_prod(self.masks_WL, axis=-1) * tf.math.reduce_prod(self.masks_GC, axis=-1)
-                    mask = tf.expand_dims(mask, axis=-1)
-                    data_vectors["xg"] *= mask
-
-                    map_tensor = data_vectors["xg"]
-
-                if self._has_lensing() and self._has_clustering():
-                    # concatenate along the tomography axis
-                    map_tensor = tf.concat([data_vectors["kg"], data_vectors["dg"]], axis=-1)
-
-                if not self.with_padding:
-                    LOGGER.info(f"Removing the padding")
-                    map_tensor = tf.boolean_mask(map_tensor, self.mask_total, axis=1)
-
-                # potentially discard the unwanted redshift bins
-                if self.z_bin_inds is not None:
-                    LOGGER.warning(f"Discarding all redshift bins except {self.z_bin_inds}")
-                    map_tensor = tf.gather(map_tensor, self.z_bin_inds, axis=-1)
-            else:
-                map_tensor = None
-
-            if self.return_cls:
-                cl_tensor = data_vectors.pop("cl")
-            else:
-                cl_tensor = None
-
-        # gather the indices
-        i_sobol = data_vectors.pop("i_sobol")
-        i_signal = data_vectors.pop("i_signal")
-        i_noise = data_vectors.pop("i_noise")
-
-        return map_tensor, cl_tensor, cosmo, (i_sobol, i_signal, i_noise)
+def _unsorted_segment_mean(
+    data: torch.Tensor, segment_ids: torch.Tensor, num_segments: int, dim: int = 0
+) -> torch.Tensor:
+    segment_ids = segment_ids.to(device=data.device, dtype=torch.long)
+    moved = data.movedim(dim, 0)
+    out = torch.zeros((num_segments, *moved.shape[1:]), dtype=data.dtype, device=data.device)
+    index = segment_ids.view(-1, *([1] * (moved.ndim - 1))).expand_as(moved)
+    out.scatter_add_(0, index, moved)
+    counts = torch.zeros(num_segments, dtype=data.dtype, device=data.device)
+    counts.scatter_add_(0, segment_ids, torch.ones_like(segment_ids, dtype=data.dtype))
+    counts = counts.clamp_min(1).view(-1, *([1] * (moved.ndim - 1)))
+    return (out / counts).movedim(0, dim)

@@ -1,13 +1,11 @@
 import pytest
 
-
 np = pytest.importorskip("numpy")
-tf = pytest.importorskip("tensorflow")
+torch = pytest.importorskip("torch")
 wds = pytest.importorskip("webdataset")
+torch = pytest.importorskip("torch")
 
-from msfm.grid_pipeline import GridPipeline
 from msfm.utils import webdatasets
-
 
 N_PIX = 5
 N_Z_WL = 2
@@ -27,9 +25,7 @@ def _grid_arrays(with_cross=True):
     cls = (400 + np.arange(N_NOISE * N_CLS * N_Z_CROSS, dtype=np.float32)).reshape(N_NOISE, N_CLS, N_Z_CROSS)
     cosmo = np.array([0.125, 0.25], dtype=np.float32)
     xg = (500 + np.arange(N_PIX * N_Z_CROSS_MAP, dtype=np.float32)).reshape(N_PIX, N_Z_CROSS_MAP)
-    xn = (600 + np.arange(N_NOISE * N_PIX * N_Z_CROSS_MAP, dtype=np.float32)).reshape(
-        N_NOISE, N_PIX, N_Z_CROSS_MAP
-    )
+    xn = (600 + np.arange(N_NOISE * N_PIX * N_Z_CROSS_MAP, dtype=np.float32)).reshape(N_NOISE, N_PIX, N_Z_CROSS_MAP)
     if not with_cross:
         xg = None
         xn = None
@@ -61,8 +57,8 @@ def _read_single_sample(path):
 
 
 def _assert_tensor_matches(tensor, array):
-    assert isinstance(tensor, tf.Tensor)
-    assert tensor.dtype == tf.float32
+    assert isinstance(tensor, torch.Tensor)
+    assert tensor.dtype == torch.float32
     assert tuple(tensor.shape) == tuple(array.shape)
     np.testing.assert_array_equal(tensor.numpy(), array)
 
@@ -89,8 +85,8 @@ def test_grid_webdataset_tar_roundtrips_arrays_dtypes_shapes_and_noise_indices(t
     _assert_tensor_matches(decoded["xg_0"], xg + xn[0])
     _assert_tensor_matches(decoded["cl_2"], cls[2])
     _assert_tensor_matches(decoded["cl_0"], cls[0])
-    assert decoded["i_sobol"].dtype == tf.int64
-    assert decoded["i_signal"].dtype == tf.int64
+    assert decoded["i_sobol"].dtype == torch.int64
+    assert decoded["i_signal"].dtype == torch.int64
     assert decoded["i_sobol"].numpy() == 7
     assert decoded["i_signal"].numpy() == 11
 
@@ -133,10 +129,11 @@ def test_grid_webdataset_optional_cross_maps_are_absent_when_disabled(tmp_path):
 
 
 def _minimal_grid_pipeline(*, return_maps=True, return_cls=True, with_cross=False):
+    tf = pytest.importorskip("tensorflow")
+    from msfm.grid_pipeline import GridPipeline
+
     pipeline = GridPipeline.__new__(GridPipeline)
-    pipeline.conf = {
-        "analysis": {"grid": {"n_noise_per_signal": N_NOISE, "n_perms_per_cosmo": 1}, "n_patches": 1}
-    }
+    pipeline.conf = {"analysis": {"grid": {"n_noise_per_signal": N_NOISE, "n_perms_per_cosmo": 1}, "n_patches": 1}}
     pipeline.params = ["Omega_m", "sigma8"]
     pipeline.all_params = ["Omega_m", "sigma8"]
     pipeline.n_all_params = N_PARAMS
@@ -163,7 +160,7 @@ def _minimal_grid_pipeline(*, return_maps=True, return_cls=True, with_cross=Fals
 
 
 @pytest.mark.parametrize("return_maps,return_cls", [(True, True), (True, False), (False, True)])
-def test_grid_pipeline_loader_returns_tf_tensors_for_maps_cls_and_indices(tmp_path, return_maps, return_cls):
+def test_grid_pipeline_loader_returns_torch_tensor_dict_for_maps_cls_and_indices(tmp_path, return_maps, return_cls):
     shard = tmp_path / "grid-000000.tar"
     _write_one_grid_shard(shard, with_cross=False)
     pipeline = _minimal_grid_pipeline(return_maps=return_maps, return_cls=return_cls, with_cross=False)
@@ -182,28 +179,26 @@ def test_grid_pipeline_loader_returns_tf_tensors_for_maps_cls_and_indices(tmp_pa
             )
         )
     )
-    map_tensor, cl_tensor, cosmo_tensor, index = batch
-
     if return_maps:
-        assert isinstance(map_tensor, tf.Tensor)
-        assert tuple(map_tensor.shape) == (1, N_PIX, N_Z_WL + N_Z_GC)
+        assert isinstance(batch["maps"], torch.Tensor)
+        assert tuple(batch["maps"].shape) == (1, N_PIX, N_Z_WL + N_Z_GC)
     else:
-        assert map_tensor is None
+        assert "maps" not in batch
     if return_cls:
-        assert isinstance(cl_tensor, tf.Tensor)
-        assert tuple(cl_tensor.shape) == (1, N_CLS, N_Z_CROSS)
+        assert isinstance(batch["cls"], torch.Tensor)
+        assert tuple(batch["cls"].shape) == (1, N_CLS, N_Z_CROSS)
     else:
-        assert cl_tensor is None
-    assert isinstance(cosmo_tensor, tf.Tensor)
-    assert all(isinstance(value, tf.Tensor) for value in index)
+        assert "cls" not in batch
+    assert isinstance(batch["cosmo"], torch.Tensor)
+    assert all(isinstance(batch[key], torch.Tensor) for key in ("i_sobol", "i_signal", "i_noise"))
 
 
-def test_grid_pipeline_loader_returns_tf_tensor_for_optional_cross_maps(tmp_path):
+def test_grid_pipeline_loader_returns_torch_tensor_dict_for_optional_cross_maps(tmp_path):
     shard = tmp_path / "grid-000000.tar"
     _write_one_grid_shard(shard, with_cross=True)
     pipeline = _minimal_grid_pipeline(return_maps=True, return_cls=False, with_cross=True)
 
-    map_tensor, cl_tensor, cosmo_tensor, index = next(
+    batch = next(
         iter(
             pipeline.get_dset(
                 pattern=str(shard),
@@ -218,11 +213,11 @@ def test_grid_pipeline_loader_returns_tf_tensor_for_optional_cross_maps(tmp_path
         )
     )
 
-    assert isinstance(map_tensor, tf.Tensor)
-    assert tuple(map_tensor.shape) == (1, N_PIX, N_Z_CROSS_MAP)
-    assert cl_tensor is None
-    assert isinstance(cosmo_tensor, tf.Tensor)
-    assert all(isinstance(value, tf.Tensor) for value in index)
+    assert isinstance(batch["maps"], torch.Tensor)
+    assert tuple(batch["maps"].shape) == (1, N_PIX, N_Z_CROSS_MAP)
+    assert "cls" not in batch
+    assert isinstance(batch["cosmo"], torch.Tensor)
+    assert all(isinstance(batch[key], torch.Tensor) for key in ("i_sobol", "i_signal", "i_noise"))
 
 
 def _fiducial_arrays():
@@ -231,12 +226,10 @@ def _fiducial_arrays():
     ia_labels = labels[2:3]
     bg_labels = labels[3:]
     kg_perts = [
-        (700 + offset + np.arange(N_PIX * N_Z_WL, dtype=np.float32)).reshape(N_PIX, N_Z_WL)
-        for offset in (0, 20)
+        (700 + offset + np.arange(N_PIX * N_Z_WL, dtype=np.float32)).reshape(N_PIX, N_Z_WL) for offset in (0, 20)
     ]
     dg_perts = [
-        (800 + offset + np.arange(N_PIX * N_Z_GC, dtype=np.float32)).reshape(N_PIX, N_Z_GC)
-        for offset in (0, 20)
+        (800 + offset + np.arange(N_PIX * N_Z_GC, dtype=np.float32)).reshape(N_PIX, N_Z_GC) for offset in (0, 20)
     ]
     ia_perts = [(900 + np.arange(N_PIX * N_Z_WL, dtype=np.float32)).reshape(N_PIX, N_Z_WL)]
     bg_perts = [(1000 + np.arange(N_PIX * N_Z_GC, dtype=np.float32)).reshape(N_PIX, N_Z_GC)]
@@ -245,12 +238,8 @@ def _fiducial_arrays():
     cl_perts = (1300 + np.arange(2 * N_NOISE * N_CLS * N_Z_CROSS, dtype=np.float32)).reshape(
         2, N_NOISE, N_CLS, N_Z_CROSS
     )
-    cl_ia = (1400 + np.arange(1 * N_NOISE * N_CLS * N_Z_CROSS, dtype=np.float32)).reshape(
-        1, N_NOISE, N_CLS, N_Z_CROSS
-    )
-    cl_bg = (1500 + np.arange(1 * N_NOISE * N_CLS * N_Z_CROSS, dtype=np.float32)).reshape(
-        1, N_NOISE, N_CLS, N_Z_CROSS
-    )
+    cl_ia = (1400 + np.arange(1 * N_NOISE * N_CLS * N_Z_CROSS, dtype=np.float32)).reshape(1, N_NOISE, N_CLS, N_Z_CROSS)
+    cl_bg = (1500 + np.arange(1 * N_NOISE * N_CLS * N_Z_CROSS, dtype=np.float32)).reshape(1, N_NOISE, N_CLS, N_Z_CROSS)
     return (
         labels,
         cosmo_labels,
@@ -350,7 +339,7 @@ def test_fiducial_webdataset_tar_roundtrips_arrays_dtypes_shapes_and_noise_indic
     _assert_tensor_matches(decoded["cl_Omega_m_p"], cl_perts[1][[2, 0]])
     _assert_tensor_matches(decoded[f"cl_{ia_labels[0]}"], cl_ia[0][[2, 0]])
     _assert_tensor_matches(decoded[f"cl_{bg_labels[0]}"], cl_bg[0][[2, 0]])
-    assert decoded["i_signal"].dtype == tf.int64
+    assert decoded["i_signal"].dtype == torch.int64
     assert decoded["i_signal"].numpy() == 13
 
 
