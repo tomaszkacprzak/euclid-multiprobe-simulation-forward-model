@@ -67,8 +67,8 @@ dev = [
 [project.urls]
 Repository = "https://github.com/des-science/multiprobe-simulation-forward-model"
 
-[tool.setuptools]
-packages = ["msfm"]
+[tool.setuptools.packages.find]
+include = ["msfm*"]
 
 [tool.setuptools.package-data]
 msfm = ["*.yaml", "*.yml"]
