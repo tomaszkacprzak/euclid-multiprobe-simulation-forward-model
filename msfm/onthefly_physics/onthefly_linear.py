@@ -23,7 +23,7 @@ LOGGER = logger.get_logger(__file__)
 
 class OntheflyPhysicsModelLinear(OntheflyPipeline):
 
-    def __init__(self, conf, num_samples_prior=1_000_000):
+    def __init__(self, conf, num_samples_prior=1_000_000, **kwargs):
         
         self.conf = conf
         self.astro_samples = self.get_astro_params(num_samples_prior)
@@ -150,6 +150,10 @@ class OntheflyPhysicsModelLinear(OntheflyPipeline):
         inputs = torch.cat([gg1_tot, gg2_tot, ns, ng, ns_lambda], dim=-1)
 
         return inputs, targets
+
+    def get_dset(self, **kwargs):
+
+        
 
       
 
