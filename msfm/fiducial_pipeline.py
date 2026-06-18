@@ -4,16 +4,20 @@
 Created February 2023
 Author: Arne Thomsen
 
-This file is loosely based off 
+This file is loosely based off
 https://cosmo-gitlab.phys.ethz.ch/jafluri/cosmogrid_kids1000/-/blob/master/kids1000_analysis/input_pipeline.py
 by Janis Fluri
 """
 
+import glob
+import random
 import tensorflow as tf
 import warnings
 from typing import Union
 
-from msfm.utils import logger, tfrecords, parameters
+import webdataset as wds
+
+from msfm.utils import logger, webdatasets, parameters
 from msfm.utils.base_pipeline import MSFMpipeline
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -58,7 +62,7 @@ class FiducialPipeline(MSFMpipeline):
                 networks) need this. Defaults to True.
             z_bin_inds (list, optional): Specify the indices of the redshift bins to be included. Note that this is
                 mainly meant for testing purposes and is inefficient, since all redshift bins are loaded from the
-                .tfrecords nonetheless. Defaults to None, then all redshift bins are kept.
+                WebDataset shards nonetheless. Defaults to None, then all redshift bins are kept.
             return_maps (bool, optional): Whether to return the maps. Defaults to True.
             return_maps (bool, optional): Whether to return the cls. Defaults to True.
             apply_m_bias (bool, optional): Whether to include the multiplicative shear bias. Defaults to True.
@@ -95,8 +99,8 @@ class FiducialPipeline(MSFMpipeline):
 
     def get_dset(
         self,
-        tfr_pattern: str,
-        local_batch_size: int,
+        pattern: str = None,
+        local_batch_size: int = None,
         noise_indices: Union[int, list, range] = 1,
         # performance
         is_cached: bool = False,
@@ -113,18 +117,19 @@ class FiducialPipeline(MSFMpipeline):
         examples_shuffle_seed: int = 67,
         # distribution
         input_context: tf.distribute.InputContext = None,
+        tfr_pattern: str = None,
     ) -> tf.data.Dataset:
         """Builds the tf.data.Dataset from the given file name pattern and performance related parameters.
 
         Args:
-            tfr_pattern (str): Glob pattern of the fiducial .tfrecord files.
+            pattern (str): Glob pattern of the fiducial WebDataset .tar shards.
             local_batch_size (int): Local batch size, will be multiplied with the number of deltas for the total batch
                 size.
             noise_indices (int, optional): The noise indices to return. When this is an integer, the value is
                 interpreted as range(noise_indices). Python lists and ranges are also accepted and not modified.
                 Defaults to 1, then only the single noise realization with index 0 is returned.
             is_cached (bool): Whether to cache on the level on the deserialized tensors. This is only feasible if all of
-                the fiducial .tfrecords fit into RAM. Defaults to False.
+                the fiducial WebDataset shards fit into RAM. Defaults to False.
             n_readers (int, optional): Number of parallel readers, i.e. different input files read concurrently. This
                 should be roughly less than a tenth of the number of files. Large values cost a lot of RAM, especially
                 in the distributed setting. Defaults to 4.
@@ -154,7 +159,7 @@ class FiducialPipeline(MSFMpipeline):
                 Example usage:
                     def dataset_fn(input_context):
                         dset = fiducial_pipeline.get_fiducial_dset(
-                            tfr_pattern,
+                            pattern,
                             params,
                             batch_size,
                             input_context=input_context,
@@ -182,17 +187,10 @@ class FiducialPipeline(MSFMpipeline):
         # parallelization
         if n_workers is None:
             LOGGER.info(f"n_workers is not set, using tf.data.AUTOTUNE. This might produce unexpected RAM usage.")
-            n_file_workers = tf.data.AUTOTUNE
-            n_parse_workers = tf.data.AUTOTUNE
             n_augment_workers = tf.data.AUTOTUNE
         else:
-            n_file_workers = n_readers
-            n_parse_workers = max((n_workers - n_readers) // 2, 1)
             n_augment_workers = max((n_workers - n_readers) // 2, 1)
-            LOGGER.info(
-                f"Using n_file_workers = {n_file_workers}, n_parse_workers = {n_parse_workers}, "
-                f"n_augment_workers = {n_augment_workers}"
-            )
+            LOGGER.info(f"Using n_augment_workers = {n_augment_workers}")
 
         # batching
         if drop_remainder is None:
@@ -215,8 +213,18 @@ class FiducialPipeline(MSFMpipeline):
             raise TypeError(f"noise_indices = {noise_indices} must be an integer, a list of integers or a range")
         LOGGER.info(f"Including noise_indices = {list(noise_indices)}")
 
+        if pattern is None:
+            if tfr_pattern is None:
+                raise ValueError("Either pattern or the deprecated tfr_pattern alias must be provided")
+            warnings.warn("tfr_pattern is deprecated; use pattern for WebDataset shards", DeprecationWarning)
+            pattern = tfr_pattern
+        elif tfr_pattern is not None:
+            raise ValueError("Provide only one of pattern or deprecated tfr_pattern")
+
         # get the file names
-        dset = tf.data.Dataset.list_files(tfr_pattern, shuffle=(not is_eval))
+        file_names = sorted(glob.glob(pattern))
+        if not file_names:
+            raise FileNotFoundError(f"No WebDataset shards match pattern {pattern!r}")
 
         # shard for distributed training
         if input_context is not None:
@@ -225,48 +233,48 @@ class FiducialPipeline(MSFMpipeline):
             # NOTE My HorovodStrategy is written to be compatible with this
 
             # Taken from https://www.tensorflow.org/tutorials/distribute/input#usage_2
-            dset = dset.shard(input_context.num_input_pipelines, input_context.input_pipeline_id)
-            LOGGER.info(f"Sharding the dataset over the .tfrecord files according to the input context")
+            file_names = file_names[input_context.input_pipeline_id :: input_context.num_input_pipelines]
+            LOGGER.info(f"Sharding the dataset over the WebDataset shards according to the input context")
 
-        # repeat and shuffle the files
-        if not is_eval and not is_cached:
-            dset = dset.repeat()
-            if (file_name_shuffle_buffer is not None) and (file_name_shuffle_buffer > 0):
-                dset = dset.shuffle(file_name_shuffle_buffer, seed=file_name_shuffle_seed)
-                LOGGER.info(f"Shuffling file names with shuffle_buffer = {file_name_shuffle_buffer}")
+        output_signature = {
+            key: tf.TensorSpec(shape=None, dtype=tf.float32) for key in self._fiducial_float_keys(noise_indices)
+        }
+        output_signature["i_signal"] = tf.TensorSpec(shape=(), dtype=tf.int64)
 
-        # interleave, block_length is the number of files every reader reads
-        dset = dset.interleave(
-            tf.data.TFRecordDataset,
-            cycle_length=n_readers,
-            block_length=1,
-            num_parallel_calls=n_file_workers,
-            deterministic=is_eval,
-        )
-        LOGGER.info(f"Interleaving with n_readers = {n_readers}")
+        def generator():
+            rng = random.Random(file_name_shuffle_seed)
+            while True:
+                epoch_files = list(file_names)
+                if (
+                    not is_eval
+                    and not is_cached
+                    and (file_name_shuffle_buffer is not None)
+                    and (file_name_shuffle_buffer > 0)
+                ):
+                    rng.shuffle(epoch_files)
+                for file_name in epoch_files:
+                    for sample in wds.WebDataset([file_name], shardshuffle=False):
+                        decoded = webdatasets.decode_fiducial_sample(
+                            sample,
+                            self.pert_labels,
+                            noise_indices,
+                            self.n_dv_pix,
+                            self.n_z_WL,
+                            self.n_z_GC,
+                            self.n_noise,
+                            self.n_cls,
+                            self.n_z_cross,
+                            self.with_lensing,
+                            self.with_clustering,
+                            self.return_maps,
+                            self.return_cls,
+                        )
+                        yield {key: tf.convert_to_tensor(value) for key, value in decoded.items()}
+                if is_eval or is_cached:
+                    break
 
-        # parse, output signature (data_vectors,)
-        dset = dset.map(
-            lambda serialized_example: tfrecords.parse_inverse_fiducial(
-                serialized_example,
-                self.pert_labels,
-                noise_indices,
-                # dimensions
-                self.n_dv_pix,
-                self.n_z_WL,
-                self.n_z_GC,
-                self.n_noise,
-                self.n_cls,
-                self.n_z_cross,
-                # map types
-                self.with_lensing,
-                self.with_clustering,
-                self.return_maps,
-                self.return_cls,
-            ),
-            num_parallel_calls=n_parse_workers,
-            deterministic=is_eval,
-        )
+        dset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
+        LOGGER.info(f"Reading WebDataset shards with n_readers = {n_readers}")
 
         if is_cached:
             dset = dset.cache()
@@ -307,6 +315,23 @@ class FiducialPipeline(MSFMpipeline):
         LOGGER.info(f"Successfully generated the fiducial training set with element_spec {dset.element_spec}")
         return dset
 
+    def _fiducial_float_keys(self, noise_indices: Union[list, range]) -> list:
+        keys = []
+        if self.return_maps:
+            for label in self.pert_labels:
+                if self.with_lensing and "bg" not in label:
+                    keys.append(f"kg_{label}")
+                if self.with_clustering and "Aia" not in label:
+                    keys.append(f"dg_{label}")
+            for i in noise_indices:
+                if self.with_lensing:
+                    keys.append(f"sn_{i}")
+                if self.with_clustering:
+                    keys.append(f"pn_{i}")
+        if self.return_cls:
+            keys.extend(f"cl_{label}" for label in self.pert_labels)
+        return keys
+
     def _split_noise_realizations(self, data_vectors: dict, noise_indices: Union[list, range]) -> tf.data.Dataset:
         """Split the dictionary stored within the .tfrecord files into the separate noise realizations stored within.
         For this, the signal maps are copied in memory and paired with the noise realizations. So a single element
@@ -336,7 +361,7 @@ class FiducialPipeline(MSFMpipeline):
 
         # repeat the signal as often as there are different noise realizations
         for key in data_vectors.keys():
-            # no action is necessary for the cls. They're already in this format right out of the .tfrecords
+            # no action is necessary for the cls. They're already in this format right out of the WebDataset shards
             if not "cl" in key:
                 data_vectors[key] = tf.repeat(tf.expand_dims(data_vectors[key], axis=0), len(noise_indices), axis=0)
 

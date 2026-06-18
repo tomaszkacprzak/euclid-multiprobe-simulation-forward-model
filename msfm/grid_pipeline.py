@@ -9,11 +9,15 @@ https://cosmo-gitlab.phys.ethz.ch/jafluri/cosmogrid_kids1000/-/blob/master/kids1
 by Janis Fluri
 """
 
+import glob
+import random
 import tensorflow as tf
 import warnings
 from typing import Union
 
-from msfm.utils import logger, tfrecords, parameters
+import webdataset as wds
+
+from msfm.utils import logger, webdatasets, parameters
 from msfm.utils.base_pipeline import MSFMpipeline
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
@@ -57,7 +61,7 @@ class GridPipeline(MSFMpipeline):
                 networks) need this. Defaults to True.
             z_bin_inds (list, optional): Specify the indices of the redshift bins to be included. Note that this is
                 mainly meant for testing purposes and is inefficient, since all redshift bins are loaded from the
-                .tfrecords nonetheless. Defaults to None, then all redshift bins are kept.
+                WebDataset shards nonetheless. Defaults to None, then all redshift bins are kept.
             return_maps (bool, optional): Whether to return the maps. Defaults to True.
             return_cls (bool, optional): Whether to return the cls. Defaults to True.
             return_only_cross_maps (bool, optional): Whether to return only the cross maps. Defaults to False.
@@ -122,8 +126,8 @@ class GridPipeline(MSFMpipeline):
 
     def get_dset(
         self,
-        tfr_pattern: str,
-        local_batch_size: int,
+        pattern: str = None,
+        local_batch_size: int = None,
         noise_indices: Union[int, float, list, range] = None,
         signal_indices: Union[int, float, list, range] = None,
         # performance
@@ -140,6 +144,7 @@ class GridPipeline(MSFMpipeline):
         examples_shuffle_seed: int = 12,
         # distribution
         input_context: tf.distribute.InputContext = None,
+        tfr_pattern: str = None,
         # nside downsampling
         downsample_nside: int = None,
         parent_output_idx=None,
@@ -147,7 +152,7 @@ class GridPipeline(MSFMpipeline):
         """Builds the tf.data.Dataset from the given file name pattern and performance related parameters.
 
         Args:
-            tfr_pattern (str): Glob pattern of the .fiducial tfrecord files.
+            pattern (str): Glob pattern of the fiducial WebDataset .tar shards.
             local_batch_size (int): Local batch size. Can also be the string "cosmo". Then, every batch contains all of
                 the realisations of exactly one cosmology.
             noise_indices (int, float, list, range, optional): The noise indices to return. When this is an integer, the value is
@@ -181,7 +186,7 @@ class GridPipeline(MSFMpipeline):
                 Example usage:
                     def dataset_fn(input_context):
                         dset = fiducial_pipeline.get_grid_dset(
-                            tfr_pattern,
+                            pattern,
                             local_batch_size,
                             input_context=input_context,
                         )
@@ -199,17 +204,10 @@ class GridPipeline(MSFMpipeline):
         # parallelization
         if n_workers is None:
             LOGGER.info(f"n_workers is not set, using tf.data.AUTOTUNE. This might produce unexpected RAM usage.")
-            n_file_workers = tf.data.AUTOTUNE
-            n_parse_workers = tf.data.AUTOTUNE
             n_augment_workers = tf.data.AUTOTUNE
         else:
-            n_file_workers = n_readers
-            n_parse_workers = max((n_workers - n_readers) // 2, 1)
             n_augment_workers = max((n_workers - n_readers) // 2, 1)
-            LOGGER.info(
-                f"Using n_file_workers = {n_file_workers}, n_parse_workers = {n_parse_workers}, "
-                f"n_augment_workers = {n_augment_workers}"
-            )
+            LOGGER.info(f"Using n_augment_workers = {n_augment_workers}")
 
         # batching
         if drop_remainder is None:
@@ -225,8 +223,18 @@ class GridPipeline(MSFMpipeline):
         self.n_noise = len(noise_indices)
         self.n_signal = len(signal_indices)
 
+        if pattern is None:
+            if tfr_pattern is None:
+                raise ValueError("Either pattern or the deprecated tfr_pattern alias must be provided")
+            warnings.warn("tfr_pattern is deprecated; use pattern for WebDataset shards", DeprecationWarning)
+            pattern = tfr_pattern
+        elif tfr_pattern is not None:
+            raise ValueError("Provide only one of pattern or deprecated tfr_pattern")
+
         # get the file names and dataset them
-        dset = tf.data.Dataset.list_files(tfr_pattern, shuffle=(not is_eval), seed=file_name_shuffle_seed)
+        file_names = sorted(glob.glob(pattern))
+        if not file_names:
+            raise FileNotFoundError(f"No WebDataset shards match pattern {pattern!r}")
 
         # shard for distributed evaluation
         if input_context is not None:
@@ -235,65 +243,53 @@ class GridPipeline(MSFMpipeline):
             # NOTE My HorovodStrategy is written to be compatible with this
 
             # Taken from https://www.tensorflow.org/tutorials/distribute/input#usage_2
-            dset = dset.shard(input_context.num_input_pipelines, input_context.input_pipeline_id)
-            LOGGER.info(f"Sharding the dataset over the .tfrecord files according to the input context")
-
-        # repeat and shuffle the files
-        if not is_eval:
-            dset = dset.repeat()
-            dset = dset.shuffle(file_name_shuffle_buffer, seed=file_name_shuffle_seed)
-            LOGGER.info(f"Shuffling file names with shuffle_buffer = {file_name_shuffle_buffer}")
+            file_names = file_names[input_context.input_pipeline_id :: input_context.num_input_pipelines]
+            LOGGER.info(f"Sharding the dataset over the WebDataset shards according to the input context")
 
         # interleave, block_length is the number of files every reader reads
         if local_batch_size == "cosmo":
             assert n_readers == 1, f"Can only read from a single file concurrently when local_batch_size = 'cosmo'"
             assert is_eval, f"The 'cosmo' batching is only for validation"
 
-        if signal_indices is not None:
+        output_signature = {
+            key: tf.TensorSpec(shape=None, dtype=tf.float32) for key in self._grid_float_keys(noise_indices)
+        }
+        output_signature["i_sobol"] = tf.TensorSpec(shape=(), dtype=tf.int64)
+        output_signature["i_signal"] = tf.TensorSpec(shape=(), dtype=tf.int64)
 
-            def interleave_func(file):
-                return (
-                    tf.data.TFRecordDataset(file)
-                    .enumerate()
-                    .filter(lambda i, ex: tf.reduce_any(tf.equal(i, tf.constant(signal_indices, dtype=tf.int64))))
-                    .map(lambda i, ex: ex)
-                )
+        def generator():
+            rng = random.Random(file_name_shuffle_seed)
+            while True:
+                epoch_files = list(file_names)
+                if not is_eval and (file_name_shuffle_buffer is not None) and (file_name_shuffle_buffer > 0):
+                    rng.shuffle(epoch_files)
+                for file_name in epoch_files:
+                    for i_signal_in_file, sample in enumerate(wds.WebDataset([file_name], shardshuffle=False)):
+                        if signal_indices is not None and i_signal_in_file not in signal_indices:
+                            continue
+                        decoded = webdatasets.decode_grid_sample(
+                            sample,
+                            noise_indices,
+                            n_pix=self.n_dv_pix,
+                            n_z_WL=self.n_z_WL,
+                            n_z_GC=self.n_z_GC,
+                            n_z_cross_map=self.n_z_cross,
+                            n_z_cross=self.n_z_cross,
+                            n_params=self.n_all_params,
+                            n_noise=self.n_noise_total,
+                            n_cls=self.n_cls,
+                            with_lensing=self.with_lensing,
+                            with_clustering=self.with_clustering,
+                            with_cross=self.with_cross,
+                            return_maps=self.return_maps,
+                            return_cls=self.return_cls,
+                        )
+                        yield {key: tf.convert_to_tensor(value) for key, value in decoded.items()}
+                if is_eval:
+                    break
 
-        else:
-            interleave_func = tf.data.TFRecordDataset
-
-        dset = dset.interleave(
-            interleave_func,
-            cycle_length=n_readers,
-            block_length=1,
-            num_parallel_calls=n_file_workers,
-            deterministic=is_eval,
-        )
-        LOGGER.info(f"Interleaving with n_readers = {n_readers}")
-
-        # parse, output signature (data_vectors, index), where data_vectors is a dict
-        dset = dset.map(
-            lambda serialized_example: tfrecords.parse_inverse_grid(
-                serialized_example,
-                noise_indices,
-                # dimensions
-                n_pix=self.n_dv_pix,
-                n_z_WL=self.n_z_WL,
-                n_z_GC=self.n_z_GC,
-                n_z_cross=self.n_z_cross,
-                n_params=self.n_all_params,
-                n_noise=self.n_noise_total,
-                n_cls=self.n_cls,
-                # map types
-                with_lensing=self.with_lensing,
-                with_clustering=self.with_clustering,
-                with_cross=self.with_cross,
-                # outputs
-                return_maps=self.return_maps,
-                return_cls=self.return_cls,
-            ),
-            num_parallel_calls=n_parse_workers,
-        )
+        dset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
+        LOGGER.info(f"Reading WebDataset shards with n_readers = {n_readers}")
 
         # map a single example to len(noise_indices) examples corresponding to different noise realizations
         # NOTE that interleaving with cycle_lengths > 1 doesn't improve performance, so we use flat_map
@@ -341,6 +337,20 @@ class GridPipeline(MSFMpipeline):
         LOGGER.info(f"Successfully generated the grid set with element_spec {dset.element_spec}")
         return dset
 
+    def _grid_float_keys(self, noise_indices: Union[list, range]) -> list:
+        keys = ["cosmo"]
+        if self.return_maps:
+            for i in noise_indices:
+                if self.with_lensing:
+                    keys.append(f"kg_{i}")
+                if self.with_clustering:
+                    keys.append(f"dg_{i}")
+                if self.with_cross:
+                    keys.append(f"xg_{i}")
+        if self.return_cls:
+            keys.extend(f"cl_{i}" for i in noise_indices)
+        return keys
+
     def _split_noise_realizations(self, data_vectors: dict, noise_indices: Union[list, range]) -> tf.data.Dataset:
         """Split the dictionary stored within the .tfrecord files into the separate noise realizations stored within.
         In this way, a single element of the dataset is mapped to a new dataset. Therefore, this function should be
@@ -378,7 +388,7 @@ class GridPipeline(MSFMpipeline):
 
         # repeat as often as there are different noise realizations
         for key in data_vectors.keys():
-            # no action is necessary for the cls. They're already in this format right out of the .tfrecords
+            # no action is necessary for the cls. They're already in this format right out of the WebDataset shards
             if not "cl" in key:
                 data_vectors[key] = tf.repeat(tf.expand_dims(data_vectors[key], axis=0), len(noise_indices), axis=0)
 
@@ -458,9 +468,7 @@ class GridPipeline(MSFMpipeline):
                     # NOTE no normalization
 
                     # masking NOTE this assumes a single mask per tomographic bin
-                    mask = tf.math.reduce_prod(self.masks_WL, axis=-1) * tf.math.reduce_prod(
-                        self.masks_GC, axis=-1
-                    )
+                    mask = tf.math.reduce_prod(self.masks_WL, axis=-1) * tf.math.reduce_prod(self.masks_GC, axis=-1)
                     mask = tf.expand_dims(mask, axis=-1)
                     data_vectors["xg"] *= mask
 
