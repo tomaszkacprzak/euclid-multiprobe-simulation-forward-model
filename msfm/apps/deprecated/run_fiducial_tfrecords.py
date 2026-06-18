@@ -4,6 +4,8 @@
 Created December 2022
 Author: Arne Thomsen
 
+DEPRECATED legacy TFRecord utility. Active preprocessing should write WebDataset `.tar` shards.
+
 Convert the .h5 files containing the lensing and clustering maps to scrambled .tfrecord files suitable for training
 with the delta loss at the fiducial cosmology and its perturbations.
 
@@ -17,7 +19,6 @@ by Janis Fluri
 """
 
 import numpy as np
-import tensorflow as tf
 import os, argparse, warnings, h5py
 
 from numpy.random import default_rng
@@ -71,7 +72,7 @@ def setup(args):
         "--dir_out",
         type=str,
         default="/pscratch/sd/a/athomsen/DESY3/fiducial",
-        help="output root dir of the .tfrecords",
+        help="legacy output root dir of the .tfrecords; active preprocessing should write WebDataset .tar shards",
     )
     parser.add_argument(
         "--config",
@@ -104,6 +105,7 @@ def setup(args):
 
 
 def main(indices, args):
+    tf = tfrecords.require_tensorflow()
     args = setup(args)
 
     LOGGER.timer.start("main")
