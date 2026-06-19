@@ -102,25 +102,6 @@ class OntheflyPhysicsModelLinear(nn.Module):
         gg = gg1 + 1j*gg2
         ga = ga1 + 1j*ga2
         gd = gd1 + 1j*gd2
-        i_sobol = vec_int[0]
-        i_signal = vec_int[1]
-        n_params = cosmo.shape[1]
-        n_pix = gg.shape[1]
-        n_z_wl = gg.shape[2]
-        n_z_gc = dg.shape[2]
-        print('gg.device =', gg.device)
-        print('ga.device =', ga.device)
-        print('gd.device =', gd.device)
-        print('ds.device =', ds.device)
-        print('dg.device =', dg.device)
-        print('qg.device =', qg.device)
-        print('cosmo.device =', cosmo.device)
-        print('i_sobol.device =', i_sobol.device)
-        print('i_signal.device =', i_signal.device)
-        print('n_params =', n_params)
-        print('n_pix =', n_pix)
-        print('n_z_wl =', n_z_wl)
-        print('n_z_gc =', n_z_gc)
 
         astro_params = self.sample_astro_parameters(cosmo.shape[0]).to(self.device)
         targets = torch.cat([cosmo, astro_params], dim=1)
@@ -178,10 +159,10 @@ class OntheflyPhysicsModelLinear(nn.Module):
 
 
         # final report
-        LOGGER.info(f'gg1_tot.shape = {gg1_tot.shape}, gg1_tot.dtype = {gg1_tot.dtype}')
-        LOGGER.info(f'gg2_tot.shape = {gg2_tot.shape}, gg2_tot.dtype = {gg2_tot.dtype}')
-        LOGGER.info(f'ns.shape      = {ns.shape},      ns.dtype      = {ns.dtype}')
-        LOGGER.info(f'ng.shape      = {ng.shape},      ng.dtype      = {ng.dtype}')
+        LOGGER.info(f'gg1_tot.shape={gg1_tot.shape}, gg1_tot.dtype={gg1_tot.dtype}')
+        LOGGER.info(f'gg2_tot.shape={gg2_tot.shape}, gg2_tot.dtype={gg2_tot.dtype}')
+        LOGGER.info(f'ns.shape={ns.shape}, ns.dtype={ns.dtype}')
+        LOGGER.info(f'ng.shape={ng.shape}, ng.dtype={ng.dtype}')
 
         # Stack probes as channels
         inputs = torch.cat([gg1_tot, gg2_tot, ns, ng], dim=-1)
