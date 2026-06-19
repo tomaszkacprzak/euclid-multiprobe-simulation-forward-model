@@ -11,6 +11,7 @@ grid_pipeline.py by Arne Thomsen
 import warnings
 from typing import Union
 import webdataset
+import torch
 from torch.utils.data import DataLoader
 from msfm.utils import logger
 import glob
@@ -26,56 +27,61 @@ class OntheflyPipeline():
     """
     Sets up a dataset for the onthefly cosmologies.
     """
-        
+    def __init__(self, webds_pattern, physics_model, device: torch.device | str, **kwargs):
 
-    def get_dataset(
-        self,
-        webds_pattern: str,
-    ):
-        """Builds the dataset from the given file name pattern and performance related parameters.
+        self.physics_model = physics_model
+        self.device = device
 
-        Args:
-            webds_pattern (str): Glob pattern of the webdataset tar files.
-            batch_size (int): Local batch size. 
-        Returns:
-            loader (torch.utils.data.DataLoader): A data loader that yields batches of data.
-        """
-
+        # get webdataset dataset
         list_files = sorted(glob.glob(webds_pattern))
-        LOGGER.info(f"list_files = {list_files}")
+        LOGGER.info(f"found {len(list_files)} files")
 
         dataset = (
             webdataset.WebDataset(list_files, shardshuffle=False)
-            .shuffle(1000)
             .decode()
             .to_tuple(
-                "gg.pth",
-                "ga.pth",
-                "gd.pth",
-                "ds.pth",
-                "dg.pth",
-                "qg.pth",
-                "cosmo.pth",
-                "i_sobol.index",
-                "i_signal.index",
-                "n_params.index",
-                "n_pix.index",
-                "n_z_wl.index",
-                "n_z_gc.index",
+                # "gg.pth",
+                # "ga.pth",
+                # "gd.pth",
+                # "ds.pth",
+                # "dg.pth",
+                # "qg.pth",
+                # "cosmo.pth",
+                # "i_sobol.index",
+                # "i_signal.index",
+                # "n_params.index",
+                # "n_pix.index",
+                # "n_z_wl.index",
+                # "n_z_gc.index",
+                "maps_float32.pth",
+                "vec_int32.pth",
+                "vec_float32.pth",
             )
         )
+        
+        # get torch DataLoader
+        self.loader = DataLoader(dataset, **kwargs)
 
-        return dataset
 
-    def get_loader(
-        self,
-        webds_pattern: str,
-        batch_size: int,
-    ):
-        """Builds the data loader from the given dataset and performance related parameters.
-        """
+    def __iter__(self):
 
-        dataset = self.get_dataset(webds_pattern)
-        loader = DataLoader(dataset, batch_size=batch_size, num_workers=8, pin_memory=True)
+        batch_count = 0
+        
+        for batch in self.loader:
 
-        return loader
+            with torch.profiler.record_function("batch_to_cuda"):
+                batch = tuple(tensor.to(self.device) for tensor in batch)
+
+            # add physics augmentations
+            with torch.no_grad():
+
+                with torch.profiler.record_function("physics forward model"):
+                    inputs, targets = self.physics_model.forward(batch)
+
+            LOGGER.debug(f"Batch {batch_count:>6d} physics shape = {inputs.shape}")
+
+            batch_count += 1
+
+            yield inputs, targets
+
+

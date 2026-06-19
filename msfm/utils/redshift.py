@@ -67,6 +67,23 @@ def get_tomo_amplitudes_according_to_config(conf, amplitude, exponent, sample="m
         z_max_quantile=z_max_quantile,
     )
 
+def get_tomo_nz_arrays_truncated(tomo_z, tomo_nz, z_min_quantile=0.05, z_max_quantile=0.95):
+
+    # Convert tomographic lists to arrays (n_bins, n_z)
+    tomo_z_array = np.asarray(tomo_z, dtype=float)
+    tomo_nz_array = np.asarray(tomo_nz, dtype=float)
+
+    # Optional truncation per bin replicating the scalar implementation
+    if (z_min_quantile <= 0.0 and z_max_quantile >= 1.0):
+        truncated = []
+        for z, nz in zip(tomo_z_array, tomo_nz_array):
+            cdf = np.cumsum(nz / np.sum(nz))
+            z_min = np.interp(z_min_quantile, cdf, z)
+            z_max = np.interp(z_max_quantile, cdf, z)
+            truncated.append(np.where((z >= z_min) & (z <= z_max), nz, 0.0))
+        tomo_nz_array = np.stack(truncated, axis=0)
+
+    return tomo_z_array, tomo_nz_array
 
 def get_tomo_amplitudes_vectorized(
     amplitude,
@@ -74,9 +91,9 @@ def get_tomo_amplitudes_vectorized(
     tomo_z,
     tomo_nz,
     z0,
-    truncate_nz: bool = True,
     z_min_quantile: float = 0.05,
     z_max_quantile: float = 0.95,
+    backend: str = 'numpy',
 ):
     """Vectorized version of :func:`get_tomo_amplitudes`.
 
@@ -109,48 +126,59 @@ def get_tomo_amplitudes_vectorized(
     """
 
     # Convert tomographic lists to arrays (n_bins, n_z)
-    tomo_z_array = np.asarray(tomo_z, dtype=float)
-    tomo_nz_array = np.asarray(tomo_nz, dtype=float)
+    if backend == 'numpy':
 
-    # Optional truncation per bin replicating the scalar implementation
-    if truncate_nz and not (z_min_quantile <= 0.0 and z_max_quantile >= 1.0):
-        truncated = []
-        for z, nz in zip(tomo_z_array, tomo_nz_array):
-            cdf = np.cumsum(nz / np.sum(nz))
-            z_min = np.interp(z_min_quantile, cdf, z)
-            z_max = np.interp(z_max_quantile, cdf, z)
-            truncated.append(np.where((z >= z_min) & (z <= z_max), nz, 0.0))
-        tomo_nz_array = np.stack(truncated, axis=0)
+        tomo_z_array = np.asarray(tomo_z, dtype=float)
+        tomo_nz_array = np.asarray(tomo_nz, dtype=float)
 
-    # Prepare parameter arrays with broadcasting rules similar to numpy ufuncs
-    amp_arr = np.atleast_1d(amplitude).astype(float)
-    exp_arr = np.atleast_1d(exponent).astype(float)
+        # Prepare parameter arrays with broadcasting rules similar to numpy ufuncs
+        amp_arr = np.atleast_1d(amplitude).astype(float)
+        exp_arr = np.atleast_1d(exponent).astype(float)
 
-    if amp_arr.size == 1 and exp_arr.size > 1:
-        amp_arr = np.full(exp_arr.shape, amp_arr[0])
-    if exp_arr.size == 1 and amp_arr.size > 1:
-        exp_arr = np.full(amp_arr.shape, exp_arr[0])
-    if amp_arr.size != exp_arr.size:
-        raise ValueError(
-            "amplitude and exponent must be broadcastable to the same length (or be scalars); got %d vs %d"
-            % (amp_arr.size, exp_arr.size)
-        )
+        if amp_arr.size == 1 and exp_arr.size > 1:
+            amp_arr = np.full(exp_arr.shape, amp_arr[0])
+        if exp_arr.size == 1 and amp_arr.size > 1:
+            exp_arr = np.full(amp_arr.shape, exp_arr[0])
+        if amp_arr.size != exp_arr.size:
+            raise ValueError(
+                "amplitude and exponent must be broadcastable to the same length (or be scalars); got %d vs %d"
+                % (amp_arr.size, exp_arr.size)
+            )
 
-    batch = amp_arr.size
-    # Add batch axis for computation: (B, n_bins, n_z)
-    z_grid = tomo_z_array[None, :, :]
-    nz_grid = tomo_nz_array[None, :, :]
+        batch = amp_arr.size
+        # Add batch axis for computation: (B, n_bins, n_z)
+        z_grid = tomo_z_array[None, :, :]
+        nz_grid = tomo_nz_array[None, :, :]
 
-    # Compute integrals per batch item
-    exp_grid = exp_arr[:, None, None]
-    integrand = nz_grid * ((1.0 + z_grid) / (1.0 + z0)) ** exp_grid
-    integrals = np.sum(integrand, axis=2) / np.sum(nz_grid, axis=2)
-    amplitudes = amp_arr[:, None] * integrals  # (B, n_bins)
+        # Compute integrals per batch item
+        exp_grid = exp_arr[:, None, None]
+        integrand = nz_grid * ((1.0 + z_grid) / (1.0 + z0)) ** exp_grid
+        integrals = np.sum(integrand, axis=2) / np.sum(nz_grid, axis=2)
+        amplitudes = amp_arr[:, None] * integrals  # (B, n_bins)
+        amplitudes = amplitudes.astype(np.float32)
 
-    result = amplitudes.astype(np.float32)
-    if batch == 1:
-        return result[0]
-    return result
+    elif backend == 'torch':
+        import torch
+
+        # batch mode only
+        assert amplitude.ndim == 1, "amplitude must be a 1D tensor"
+        assert exponent.ndim == 1, "exponent must be a 1D tensor"
+        assert amplitude.shape == exponent.shape, "amplitude and exponent must have the same shape"
+
+        tomo_z_array = tomo_z.unsqueeze(0) # shape (1, num_z, 1)
+        tomo_nz_array = tomo_nz.unsqueeze(0) # shape (1, num_z, num_bins)
+
+        amp_arr = amplitude.unsqueeze(1) # shape (batch_size, 1)
+        exp_arr = exponent.unsqueeze(1).unsqueeze(-1) # shape (batch_size, 1, 1)
+        integrand = tomo_nz_array * ((1.0 + tomo_z_array) / (1.0 + z0)) ** exp_arr 
+        integrals = torch.sum(integrand, dim=2) / torch.sum(tomo_nz_array, dim=2) # shape (batch_size, num_bins)
+        amplitudes = amp_arr * integrals  # shape (batch_size, num_bins) 
+
+    else:
+        raise ValueError(f"Invalid backend: {backend}")
+
+
+    return amplitudes # shape (batch_size, num_bins)
 
 
 def get_tomo_amplitudes_according_to_config_vectorized(
@@ -164,13 +192,13 @@ def get_tomo_amplitudes_according_to_config_vectorized(
 ):
     tomo_z, tomo_nz = files.load_redshift_distributions(sample, conf)
     z0 = conf["survey"][sample]["z0"]
+    if truncate_nz:
+        tomo_z, tomo_nz = get_tomo_nz_arrays_truncated(tomo_z, tomo_nz, z_min_quantile, z_max_quantile)
+
     return get_tomo_amplitudes_vectorized(
         amplitude,
         exponent,
         tomo_z,
         tomo_nz,
         z0,
-        truncate_nz=truncate_nz,
-        z_min_quantile=z_min_quantile,
-        z_max_quantile=z_max_quantile,
     )

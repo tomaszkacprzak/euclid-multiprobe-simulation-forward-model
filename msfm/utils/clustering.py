@@ -8,12 +8,10 @@ or three maps (polarized case), these functions are not vectorized accross the e
 
 import os
 import numpy as np
-
 from sobol_seq import i4_sobol
-
 from msfm.utils import files, imports, parameters
-import tensorflow as tf
-import torch
+
+
 
 hp = imports.import_healpy()
 

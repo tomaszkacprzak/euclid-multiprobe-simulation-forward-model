@@ -284,21 +284,23 @@ def main(indices, args):
                             patch_maps[m_name] = np.concatenate(patch_maps[m_name], axis=-1)
 
                         # build output dict to be stored
+                        # maps_complex = torch.from_numpy(np.concatenate([patch_maps[m_name][..., np.newaxis] for m_name in ['gg', 'ga', 'gd']], axis=-1))
+                        # maps_float = torch.from_numpy(np.concatenate([patch_maps[m_name][..., np.newaxis] for m_name in ['ds', 'dg', 'qg']], axis=-1))
+                        # vec_int = torch.from_numpy(np.array([i_sobol, i_signal, n_z_WL, n_z_GC]))
+
+                        gg1, gg2 = patch_maps['gg'].real[..., np.newaxis], patch_maps['gg'].imag[..., np.newaxis]
+                        ga1, ga2 = patch_maps['ga'].real[..., np.newaxis], patch_maps['ga'].imag[..., np.newaxis]
+                        gd1, gd2 = patch_maps['gd'].real[..., np.newaxis], patch_maps['gd'].imag[..., np.newaxis]
+                        ds = patch_maps['ds'][..., np.newaxis]
+                        dg = patch_maps['dg'][..., np.newaxis]
+                        qg = patch_maps['qg'][..., np.newaxis]
+
+                        tensor_float = np.concatenate([gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg], axis=-1)
                         dict_out = {
                                 "__key__": f"{i_signal:09d}",
-                                "gg.pth": torch.from_numpy(patch_maps["gg"]),
-                                "ga.pth": torch.from_numpy(patch_maps["ga"]),
-                                "gd.pth": torch.from_numpy(patch_maps["gd"]),
-                                "ds.pth": torch.from_numpy(patch_maps["ds"]),
-                                "dg.pth": torch.from_numpy(patch_maps["dg"]),
-                                "qg.pth": torch.from_numpy(patch_maps["qg"]),
-                                "cosmo.pth": torch.from_numpy(cosmo),
-                                "i_sobol.index": int(i_sobol),
-                                "i_signal.index": int(i_signal),
-                                "n_params.index": int(cosmo.shape[0]),
-                                "n_pix.index": int(patch_maps["gg"].shape[0]),
-                                "n_z_wl.index": int(patch_maps["gg"].shape[1]),
-                                "n_z_gc.index": int(patch_maps["dg"].shape[1]),
+                                "maps_float32.pth": torch.from_numpy(tensor_float.astype(np.float32)),
+                                "vec_int32.pth": torch.from_numpy(np.array([i_sobol, i_signal]).astype(np.int32)),
+                                "vec_float32.pth": torch.from_numpy(cosmo.astype(np.float32)),
                             }
                         # writeout to webdataset
                         file_writer.write(dict_out)
