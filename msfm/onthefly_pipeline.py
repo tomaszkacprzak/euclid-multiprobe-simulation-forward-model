@@ -27,9 +27,10 @@ class OntheflyPipeline():
     """
     Sets up a dataset for the onthefly cosmologies.
     """
-    def __init__(self, webds_pattern, physics_model, device: torch.device | str, **kwargs):
+    def __init__(self, webds_pattern, physics_model, smoothing_model=None, device="cuda", **kwargs):
 
         self.physics_model = physics_model
+        self.smoothing_model = smoothing_model
         self.device = device
 
         # get webdataset dataset
@@ -37,7 +38,11 @@ class OntheflyPipeline():
         LOGGER.info(f"found {len(list_files)} files")
 
         dataset = (
-            webdataset.WebDataset(list_files, shardshuffle=False)
+            webdataset.WebDataset(
+                list_files, 
+                shardshuffle=1000,
+            )
+            .shuffle(32) 
             .decode()
             .to_tuple(
                 # "gg.pth",
@@ -60,7 +65,24 @@ class OntheflyPipeline():
         )
         
         # get torch DataLoader
-        self.loader = DataLoader(dataset, **kwargs)
+        # self.loader = DataLoader(dataset, **kwargs)
+        self.loader = webdataset.WebLoader(
+                        dataset,
+                        prefetch_factor=1,
+                        persistent_workers=False,
+                        **kwargs
+                      )
+
+
+        # test and get the number of pixels
+        for inputs, targets in self.__iter__():
+            
+            self.num_pixels = inputs.shape[1]
+            self.num_channels = inputs.shape[2]
+            self.num_targets = targets.shape[1]
+            break
+
+        LOGGER.info(f"Created OntheflyPipeline with num_pixels={self.num_pixels}, num_channels={self.num_channels}, num_targets={self.num_targets}")
 
 
     def __iter__(self):
@@ -72,11 +94,18 @@ class OntheflyPipeline():
             with torch.profiler.record_function("batch_to_cuda"):
                 batch = tuple(tensor.to(self.device) for tensor in batch)
 
+            maps, vec_int, cosmo = batch
+        #    "vec_int32.pth": torch.from_numpy(np.array([i_sobol, i_signal, nside, nside_down]).astype(np.int32)), 
+            batch_sobol_ids = ' '.join([f'{v:>5d}' for v in vec_int[:,1]])
+            LOGGER.info(f"Batch {batch_count:>6d} sobol ids: {batch_sobol_ids}")
+
             # add physics augmentations
             with torch.no_grad():
 
                 with torch.profiler.record_function("physics forward model"):
                     inputs, targets = self.physics_model.forward(batch)
+                    if self.smoothing_model is not None:
+                        inputs = self.smoothing_model(inputs)
 
             LOGGER.debug(f"Batch {batch_count:>6d} physics shape = {inputs.shape}")
 

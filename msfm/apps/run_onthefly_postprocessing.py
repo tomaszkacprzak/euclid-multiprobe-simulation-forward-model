@@ -25,6 +25,7 @@ import numpy as np
 import os, argparse, warnings, time, yaml, sys, io
 import webdataset
 import torch
+from contextlib import ExitStack
 
 
 from msfm.utils import (
@@ -65,12 +66,12 @@ def setup(args):
         choices=('wds', 'test'),
         help="command to run",
     )
-    parser.add_argument(
-        "--n_files",
-        type=int,
-        default=2500,
-        help="number of webdataset tar files to produce, this should be equal to the number of tasks in esub",
-    )
+    # parser.add_argument(
+    #     "--n_files",
+    #     type=int,
+    #     default=2500,
+    #     help="number of webdataset tar files to produce, this should be equal to the number of tasks in esub",
+    # )
     parser.add_argument(
         "--dir_in",
         type=str,
@@ -160,7 +161,7 @@ def main(indices, args):
         args.max_sleep = 0
         LOGGER.warning("debug mode")
     sleep_sec = np.random.uniform(0, args.max_sleep) if args.max_sleep > 0 else 0
-    LOGGER.info(f"Waiting for {sleep_sec:.2f}s to prevent overloading IO")
+    LOGGER.info(f"waiting for {sleep_sec:.2f}s to prevent overloading IO")
     time.sleep(sleep_sec)
 
     # configuration
@@ -179,144 +180,144 @@ def main(indices, args):
 
     # CosmoGrid
     n_patches = conf["analysis"]["n_patches"]
-    n_cosmos = 2501 # 2500 grid and 1 fiducial
+    n_cosmos = 2500
+    n_cosmos_per_file = 25
+    assert n_cosmos % n_cosmos_per_file == 0
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
     n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     n_examples_per_cosmo = n_patches * n_perms_per_cosmo
     LOGGER.info(
-        f"For every cosmology, theres {n_examples_per_cosmo} examples: {n_patches} patches times {n_perms_per_cosmo} permutations"
+        f"for every cosmology, theres {n_examples_per_cosmo} examples: {n_patches} patches times {n_perms_per_cosmo} permutations"
     )
 
     # modeling
     baryonified = conf["analysis"]["modelling"]["baryonified"]
 
-    # webdataset tar files
-    n_cosmos_per_file = 1
-    n_examples_per_file = n_examples_per_cosmo
-    LOGGER.info(f"The number of files implies {n_cosmos_per_file} cosmological parameters per webdataset tar file")
-
-    LOGGER.info(
-        f"In total, there are n_examples_per_cosmo * n_cosmos_per_file = {n_examples_per_cosmo} * {n_cosmos_per_file}"
-        f" = {n_examples_per_file} examples per file"
-    )
-
     # analysis files
     pixel_file = files.load_pixel_file(conf)
+    nside = int(conf["analysis"]["n_side"])
+    nside_down = int(conf["analysis"]["n_side_down"])
 
     # constants
     full_sky_samples = {"gg":'WL', "ga":'WL', "ds":'WL', "gd":'WL', "dg":'GC', "qg":'GC'}
 
-    LOGGER.info(f"Starting the main loop trough indices {indices}")
+    LOGGER.info(f"starting the main loop trough indices {indices}")
 
     # index corresponds to a webdataset tar file ###########################################################################
     for index in indices:
-        LOGGER.info(f"Starting index {index}")
+
+        LOGGER.info(f"starting index {index}")
         LOGGER.timer.start("index")
 
         if args.debug:
             args.dir_out = os.path.join(args.dir_out, "debug")
             os.makedirs(args.dir_out, exist_ok=True)
 
-        wds_file = filenames.get_filename_webdataset(
-            args.dir_out,
-            tag=conf["survey"]["name"] + args.file_suffix,
-            index=index,
-            simset="grid",
-            with_bary=baryonified,
-        )
-        LOGGER.info(f"Index {index} is writing to {wds_file}")
+        i_cosmo = index % n_cosmos
+        i_perm = index // n_cosmos
 
         # index for the cosmological parameters
-        i_cosmo_start = index * n_cosmos_per_file
-        i_cosmo_end = (index + 1) * n_cosmos_per_file
-        LOGGER.info(f"And includes {cosmo_dirs[i_cosmo_start : i_cosmo_end]}")
+        i_cosmo_start = i_cosmo * n_cosmos_per_file
+        i_cosmo_end = (i_cosmo + 1) * n_cosmos_per_file
+        LOGGER.info(f"and includes {cosmo_dirs[i_cosmo_start : i_cosmo_end]}")
 
         # initialize the webdataset tar file writer
         num_total_examples = 0
-        with webdataset.TarWriter(wds_file, encoder=True) as file_writer:
+
+        with ExitStack() as stack:
+
+            list_wds_files = []
+
+            for i_ in range(n_patches):
+
+                wds_file = filenames.get_filename_webdataset(
+                    args.dir_out,
+                    tag=conf["survey"]["name"] + f"_patch{i_:02d}" + args.file_suffix,
+                    index=index,
+                    simset="grid",
+                    with_bary=baryonified,
+                )
+                LOGGER.info(f"index {index} is writing to {wds_file}")
+
+                list_wds_files.append((wds_file, stack.enter_context(webdataset.TarWriter(wds_file, encoder=True))))
 
             # loop over the cosmological parameters
+            j = 0
             for i_cosmo, cosmo_dir_in in LOGGER.progressbar(
                 zip(range(i_cosmo_start, i_cosmo_end), cosmo_dirs_in[i_cosmo_start:i_cosmo_end]),
                 at_level="debug",
-                desc="Looping through cosmologies\n",
+                desc="looping through cosmologies\n",
                 total=i_cosmo_end - i_cosmo_start,
-            ):
-                LOGGER.debug(f"Taking inputs from {cosmo_dir_in}")
+            ):  
+                j += 1
+                LOGGER.info(f"j={j:>3d}/{n_cosmos_per_file} i_cosmo={i_cosmo:>5d} i_perm={i_perm:>2d} cosmo_dir_in={cosmo_dir_in}")
+                LOGGER.timer.start("cosmo")
 
 
                 # constants
                 cosmo = prior.get_hard_parameters(conf, cosmo_params_info, i_cosmo)
                 i_sobol = int(cosmo_dir_in[-7:-1])
-                n_patches = conf["analysis"]["n_patches"]
-                n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
-                # iterate over total maps set, which has n_cosmos * n_perms_per_cosmo * n_patches examples
-                i_signal = i_cosmo * n_perms_per_cosmo * n_patches 
-                
+             
 
-                # loop over permutations for this cosmology
-                for i_perm in LOGGER.progressbar(range(n_perms_per_cosmo),
-                    at_level="debug",
-                    desc="Looping through the per cosmology signal maps",
-                    total=n_perms_per_cosmo,
-                ):  
+                ##
+                ## Main magic - get postprocessed full sky maps
+                ##
+                full_maps_file = postprocessing._get_full_sky_perm(args, conf, cosmo_dir_in, i_perm)
+                full_sky_maps = get_postprocessed_maps(conf, full_maps_file)
 
-                                        
-                    LOGGER.info(f"Permutation {i_perm+1: 2d}/{n_perms_per_cosmo: 2d} for cosmology {i_cosmo+1: 2d}/{n_cosmos_per_file: 2d} for file {wds_file}")
-                    LOGGER.timer.start("permutation")
+                # write patches
+                for i_patch in range(n_patches):
 
-                    ##
-                    ## Main magic - get postprocessed full sky maps
-                    ##
-                    full_maps_file = postprocessing._get_full_sky_perm(args, conf, cosmo_dir_in, i_perm)
-                    full_sky_maps = get_postprocessed_maps(conf, full_maps_file)
+                    patch_maps = {}
+                    for m_name in full_sky_maps.keys():
 
-                    # write patches
-                    for i_patch in range(n_patches):
+                        patch_maps[m_name] = []
+                        for i_z, m in enumerate(full_sky_maps[m_name]):
+                            patch_map_ = postprocessing.full_sky_to_patch(m, conf, pixel_file, i_z, i_patch, sample=full_sky_samples[m_name])
+                            patch_maps[m_name].append(patch_map_[..., np.newaxis]) # shape n_pix, n_z_bins
+                        patch_maps[m_name] = np.concatenate(patch_maps[m_name], axis=-1)
 
-                        patch_maps = {}
-                        for m_name in full_sky_maps.keys():
+                    # build output dict to be stored
+                    # maps_complex = torch.from_numpy(np.concatenate([patch_maps[m_name][..., np.newaxis] for m_name in ['gg', 'ga', 'gd']], axis=-1))
+                    # maps_float = torch.from_numpy(np.concatenate([patch_maps[m_name][..., np.newaxis] for m_name in ['ds', 'dg', 'qg']], axis=-1))
+                    # vec_int = torch.from_numpy(np.array([i_sobol, i_signal, n_z_WL, n_z_GC]))
 
-                            patch_maps[m_name] = []
-                            for i_z, m in enumerate(full_sky_maps[m_name]):
-                                patch_map_ = postprocessing.full_sky_to_patch(m, conf, pixel_file, i_z, i_patch, sample=full_sky_samples[m_name])
-                                patch_maps[m_name].append(patch_map_[..., np.newaxis]) # shape n_pix, n_z_bins
-                            patch_maps[m_name] = np.concatenate(patch_maps[m_name], axis=-1)
+                    gg1, gg2 = patch_maps['gg'].real[..., np.newaxis], patch_maps['gg'].imag[..., np.newaxis]
+                    ga1, ga2 = patch_maps['ga'].real[..., np.newaxis], patch_maps['ga'].imag[..., np.newaxis]
+                    gd1, gd2 = patch_maps['gd'].real[..., np.newaxis], patch_maps['gd'].imag[..., np.newaxis]
+                    ds = patch_maps['ds'][..., np.newaxis]
+                    dg = patch_maps['dg'][..., np.newaxis]
+                    qg = patch_maps['qg'][..., np.newaxis]
 
-                        # build output dict to be stored
-                        # maps_complex = torch.from_numpy(np.concatenate([patch_maps[m_name][..., np.newaxis] for m_name in ['gg', 'ga', 'gd']], axis=-1))
-                        # maps_float = torch.from_numpy(np.concatenate([patch_maps[m_name][..., np.newaxis] for m_name in ['ds', 'dg', 'qg']], axis=-1))
-                        # vec_int = torch.from_numpy(np.array([i_sobol, i_signal, n_z_WL, n_z_GC]))
+                    tensor_float = np.concatenate([gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg], axis=-1)
+                    i_signal = index * n_cosmos * n_perms_per_cosmo * n_patches    \
+                                    +  i_cosmo * n_perms_per_cosmo * n_patches   \
+                                    +  i_perm * n_patches   \
+                                    +  i_patch
 
-                        gg1, gg2 = patch_maps['gg'].real[..., np.newaxis], patch_maps['gg'].imag[..., np.newaxis]
-                        ga1, ga2 = patch_maps['ga'].real[..., np.newaxis], patch_maps['ga'].imag[..., np.newaxis]
-                        gd1, gd2 = patch_maps['gd'].real[..., np.newaxis], patch_maps['gd'].imag[..., np.newaxis]
-                        ds = patch_maps['ds'][..., np.newaxis]
-                        dg = patch_maps['dg'][..., np.newaxis]
-                        qg = patch_maps['qg'][..., np.newaxis]
+                    dict_out = {
+                            "__key__": f"{i_signal:09d}",
+                            "maps_float32.pth": torch.from_numpy(tensor_float.astype(np.float32)),
+                            "vec_int32.pth": torch.from_numpy(np.array([i_signal, i_sobol, i_cosmo, i_perm, i_patch, nside, nside_down]).astype(np.int32)),
+                            "vec_float32.pth": torch.from_numpy(cosmo.astype(np.float32)),
+                        }
 
-                        tensor_float = np.concatenate([gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg], axis=-1)
-                        dict_out = {
-                                "__key__": f"{i_signal:09d}",
-                                "maps_float32.pth": torch.from_numpy(tensor_float.astype(np.float32)),
-                                "vec_int32.pth": torch.from_numpy(np.array([i_sobol, i_signal]).astype(np.int32)),
-                                "vec_float32.pth": torch.from_numpy(cosmo.astype(np.float32)),
-                            }
-                        # writeout to webdataset
-                        file_writer.write(dict_out)
-                        del_dict(dict_out)
+                    # writeout to webdataset
+                    wds_file, wds_writer = list_wds_files[i_patch]
+                    wds_writer.write(dict_out)
+                    del_dict(dict_out)
+                    num_total_examples += 1
 
-                        i_signal += 1
-                        LOGGER.info(f"Writing example to {wds_file} i_cosmo={i_cosmo:>5d} i_perm={i_perm:>2d}, i_patch={i_patch:>2d}, i_signal={i_signal:>8d}")
-                        for key in patch_maps.keys():
-                            LOGGER.debug(f"{key}.shape={patch_maps[key].shape}, dtype={patch_maps[key].dtype}")
+                    
+                    LOGGER.info(f"wrote example to {wds_file} i_cosmo={i_cosmo:>5d} i_perm={i_perm:>2d}, i_patch={i_patch:>2d}, i_signal={i_signal:>8d}")
+                    for key in patch_maps.keys():
+                        LOGGER.debug(f"{key}.shape={patch_maps[key].shape}, dtype={patch_maps[key].dtype}")
 
-                    LOGGER.info(f"Done with permutation {i_perm:04d} time taken {LOGGER.timer.elapsed('permutation')}")
+                LOGGER.info(f"done with i_cosmo={i_cosmo} i_perm={i_perm} after {LOGGER.timer.elapsed('cosmo')}")
+                                   
+        LOGGER.info(f"done with index={index} after {LOGGER.timer.elapsed('index')}")
 
-                                    
-
-        LOGGER.info(f"Done with index {index} after {LOGGER.timer.elapsed('index')}")
-        return num_total_examples
+    return num_total_examples
 
 
         
