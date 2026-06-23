@@ -42,7 +42,6 @@ class OntheflyPipeline():
                 list_files, 
                 shardshuffle=1000,
             )
-            .shuffle(32) 
             .decode()
             .to_tuple(
                 # "gg.pth",
@@ -68,8 +67,7 @@ class OntheflyPipeline():
         # self.loader = DataLoader(dataset, **kwargs)
         self.loader = webdataset.WebLoader(
                         dataset,
-                        prefetch_factor=1,
-                        persistent_workers=False,
+                        prefetch_factor=2,
                         **kwargs
                       )
 
@@ -94,10 +92,10 @@ class OntheflyPipeline():
             with torch.profiler.record_function("batch_to_cuda"):
                 batch = tuple(tensor.to(self.device) for tensor in batch)
 
-            maps, vec_int, cosmo = batch
+            # maps, vec_int, cosmo = batch
         #    "vec_int32.pth": torch.from_numpy(np.array([i_sobol, i_signal, nside, nside_down]).astype(np.int32)), 
-            batch_sobol_ids = ' '.join([f'{v:>5d}' for v in vec_int[:,1]])
-            LOGGER.info(f"Batch {batch_count:>6d} sobol ids: {batch_sobol_ids}")
+            # batch_sobol_ids = ' '.join([f'{v:>5d}' for v in vec_int[:,1]])
+            # LOGGER.info(f"Batch {batch_count:>6d} sobol ids: {batch_sobol_ids}")
 
             # add physics augmentations
             with torch.no_grad():
