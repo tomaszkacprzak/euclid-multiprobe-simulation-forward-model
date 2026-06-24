@@ -44,19 +44,6 @@ class OntheflyPipeline():
             )
             .decode()
             .to_tuple(
-                # "gg.pth",
-                # "ga.pth",
-                # "gd.pth",
-                # "ds.pth",
-                # "dg.pth",
-                # "qg.pth",
-                # "cosmo.pth",
-                # "i_sobol.index",
-                # "i_signal.index",
-                # "n_params.index",
-                # "n_pix.index",
-                # "n_z_wl.index",
-                # "n_z_gc.index",
                 "maps_float32.pth",
                 "vec_int32.pth",
                 "vec_float32.pth",
