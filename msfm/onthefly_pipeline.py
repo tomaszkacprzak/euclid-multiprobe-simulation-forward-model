@@ -54,7 +54,7 @@ class OntheflyPipeline():
         # self.loader = DataLoader(dataset, **kwargs)
         self.loader = webdataset.WebLoader(
                         dataset,
-                        prefetch_factor=2,
+                        pin_memory=True,
                         **kwargs
                       )
 
@@ -77,7 +77,7 @@ class OntheflyPipeline():
         for batch in self.loader:
 
             with torch.profiler.record_function("batch_to_cuda"):
-                batch = tuple(tensor.to(self.device) for tensor in batch)
+                batch = tuple(tensor.to(self.device, non_blocking=True) for tensor in batch)
 
             # maps, vec_int, cosmo = batch
         #    "vec_int32.pth": torch.from_numpy(np.array([i_sobol, i_signal, nside, nside_down]).astype(np.int32)), 

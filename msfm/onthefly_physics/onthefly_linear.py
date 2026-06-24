@@ -53,15 +53,17 @@ class OntheflyPhysicsModelLinear(nn.Module):
         channel_stds = torch.tensor([ sn, sn,  sn, sn, sn, sn, sn, sn, sn, sn, sn, sn, 6.0742157404e+01, 6.0030681612e+01, 5.8954460206e+01, 5.9754644183e+01, 5.8358482096e+01, 6.0870883217e+01, 1.0521426588e+01, 1.0446036066e+01, 1.0460830854e+01, 1.0405959759e+01, 1.0057117242e+01, 1.0407199295e+01])
         channel_mean = torch.tensor([  0,  0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 7.3234141948e+01, 7.2668064310e+01, 7.1583784613e+01, 7.3031979277e+01, 7.1333946636e+01, 7.4637793854e+01, 1.1884575647e+01, 1.1665196170e+01, 1.2027982057e+01, 1.1937562596e+01, 1.1565197428e+01, 1.1962488818e+01]) 
         # shape (1, 1, num_channels)
-        self.channel_stds = channel_stds.reshape(1, 1, -1).to(self.device)
-        self.channel_mean = channel_mean.reshape(1, 1, -1).to(self.device)
+        self.channel_scale = channel_stds.reshape(1, 1, -1).to(self.device)
+        self.channel_shift = channel_mean.reshape(1, 1, -1).to(self.device)
 
+        list_min = torch.tensor([0.1, 0.4, 0.03, 64, 0.87,     -2, 12.0,  -2,  -3,  -4, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
+        list_max = torch.tensor([0.5, 1.4, 0.06, 82, 1.07, -0.333, 15.0, 2.0, 3.0, 6.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0])
 
-        targets_stds = torch.tensor([7.8334718640e-02,  1.9175510301e-01,  4.5786586271e-03,  5.1527118543e+00,  3.0409003415e-02,  1.8906871713e-01,  4.2933508275e-01,  1.0888102739e+00,  1.6585535022e+00,  2.6264523371e+00,  6.0221754643e-01,  6.7831336488e-01,  6.1259380541e-01,  6.4341219166e-01,  6.3240896897e-01,  6.4718528047e-01,  2.5368841385e-01,  3.0092315697e-01,  3.1627338892e-01,  2.8805443489e-01,  3.0337463573e-01,  3.1135862569e-01])
-        targets_mean = torch.tensor([2.6812500358e-01,  8.4843747616e-01,  4.0171875805e-02,  7.1734375000e+01,  1.0009375215e+00, -1.1691046596e+00,  1.3082812500e+01,  4.3125000000e-01, -3.6184755067e-01,  1.7696429292e+00,  1.9737388968e+00,  1.9204200253e+00,  2.0108524859e+00,  1.9878384754e+00,  1.8939310402e+00,  1.9937345639e+00,  1.5251097560e+00,  1.5057281315e+00,  1.4681568265e+00,  1.5181897223e+00,  1.4596939683e+00,  1.5733177662e+00])
         # shape (1, num_targets)
-        self.targets_stds = targets_stds.reshape(1, -1).to(self.device)
-        self.targets_mean = targets_mean.reshape(1, -1).to(self.device)
+        shift = list_min
+        scale = 1/(list_max-list_min)
+        self.targets_scale = scale.reshape(1, -1).to(self.device)
+        self.targets_shift = shift.reshape(1, -1).to(self.device)
 
 
 
@@ -111,12 +113,12 @@ class OntheflyPhysicsModelLinear(nn.Module):
             p_ = self.astro_samples[:, i]
             LOGGER.info(f"   {param_name:>20s}  min={np.min(p_): 8.3f} max={np.max(p_): 8.3f} mean={np.mean(p_): 8.3f}")
 
-        return torch.from_numpy(self.astro_samples)
+        return torch.from_numpy(self.astro_samples).to(self.device)
 
     def sample_astro_parameters(self, batch_size):
 
-        j = torch.randint(0, self.astro_samples.shape[0], (batch_size,))
-        return self.astro_samples[j].squeeze()
+        j = torch.randint(0, self.astro_samples.shape[0], (batch_size,), device=self.device)
+        return self.astro_samples[j].squeeze().to(self.device)
 
     def forward_physics(self, example):
 
@@ -198,8 +200,8 @@ class OntheflyPhysicsModelLinear(nn.Module):
 
     def apply_scalers(self, inputs, targets):
 
-        inputs = (inputs - self.channel_mean) / self.channel_stds
-        targets = (targets - self.targets_mean) / self.targets_stds
+        inputs = (inputs + self.channel_shift) * self.channel_scale
+        targets = (targets + self.targets_shift) * self.targets_scale
 
         return inputs, targets
 
