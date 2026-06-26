@@ -3,16 +3,11 @@
 """
 Created February 2026
 Author: Tomasz Kacprzak
-
-This file is loosely based off
-grid_pipeline.py by Arne Thomsen
 """
 
 import warnings
-from typing import Union
 import webdataset
 import torch
-from torch.utils.data import DataLoader
 from msfm.utils import logger
 import glob
 
