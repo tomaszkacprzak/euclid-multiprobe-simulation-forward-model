@@ -3,16 +3,11 @@
 """
 Created February 2026
 Author: Tomasz Kacprzak
-
-This file is loosely based off
-grid_pipeline.py by Arne Thomsen
 """
 
 import warnings
-from typing import Union
 import webdataset
 import torch
-from torch.utils.data import DataLoader
 from msfm.utils import logger
 import glob
 
@@ -27,11 +22,12 @@ class OntheflyPipeline():
     """
     Sets up a dataset for the onthefly cosmologies.
     """
-    def __init__(self, webds_pattern, physics_model, smoothing_model=None, device="cuda", **kwargs):
+    def __init__(self, webds_pattern, batch_size, physics_model, smoothing_model=None, device="cuda", **kwargs):
 
         self.physics_model = physics_model
         self.smoothing_model = smoothing_model
         self.device = device
+        self.batch_size = batch_size
 
         # get webdataset dataset
         list_files = sorted(glob.glob(webds_pattern))
@@ -44,19 +40,6 @@ class OntheflyPipeline():
             )
             .decode()
             .to_tuple(
-                # "gg.pth",
-                # "ga.pth",
-                # "gd.pth",
-                # "ds.pth",
-                # "dg.pth",
-                # "qg.pth",
-                # "cosmo.pth",
-                # "i_sobol.index",
-                # "i_signal.index",
-                # "n_params.index",
-                # "n_pix.index",
-                # "n_z_wl.index",
-                # "n_z_gc.index",
                 "maps_float32.pth",
                 "vec_int32.pth",
                 "vec_float32.pth",
@@ -67,7 +50,8 @@ class OntheflyPipeline():
         # self.loader = DataLoader(dataset, **kwargs)
         self.loader = webdataset.WebLoader(
                         dataset,
-                        prefetch_factor=2,
+                        pin_memory=True,
+                        batch_size=self.batch_size,
                         **kwargs
                       )
 
@@ -90,7 +74,7 @@ class OntheflyPipeline():
         for batch in self.loader:
 
             with torch.profiler.record_function("batch_to_cuda"):
-                batch = tuple(tensor.to(self.device) for tensor in batch)
+                batch = tuple(tensor.to(self.device, non_blocking=True) for tensor in batch)
 
             # maps, vec_int, cosmo = batch
         #    "vec_int32.pth": torch.from_numpy(np.array([i_sobol, i_signal, nside, nside_down]).astype(np.int32)), 
