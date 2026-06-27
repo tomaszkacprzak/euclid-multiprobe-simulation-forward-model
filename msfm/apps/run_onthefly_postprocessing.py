@@ -206,12 +206,12 @@ def main(indices, args):
     for index in indices:
 
         i_cosmo_set = index % n_cosmos
-        i_perm = index // n_cosmos
         # index for the cosmological parameters
         i_cosmo_start = (i_cosmo_set * n_cosmos_per_file) % n_cosmos
         i_cosmo_end = ((i_cosmo_set + 1) * n_cosmos_per_file) % n_cosmos
+        i_perm = (index*n_examples_per_cosmo) // n_cosmos
 
-        LOGGER.info(f"starting index {index} i_cosmo_set={i_cosmo_set:>5d}/{n_cosmos//n_cosmos_per_file} i_perm={i_perm:>2d}/{n_perms_per_cosmo} i_cosmo_start={i_cosmo_start:>5d}/{n_cosmos} i_cosmo_end={i_cosmo_end:>5d}/{n_cosmos}")
+        LOGGER.info(f"starting index {index} i_cosmo_set={i_cosmo_set:>5d} i_perm={i_perm:>2d}/{n_perms_per_cosmo} i_cosmo_start={i_cosmo_start:>5d}/{n_cosmos} i_cosmo_end={i_cosmo_end:>5d}/{n_cosmos}")
         LOGGER.info(f"cosmo dirs {cosmo_dirs[i_cosmo_start : i_cosmo_end]}")
         LOGGER.timer.start("index")
 
