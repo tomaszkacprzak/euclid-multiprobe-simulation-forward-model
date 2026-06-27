@@ -78,6 +78,10 @@ class Progressbar:
         return tqdm(collection, **kw)
 
 
+class RankZeroFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return int(os.environ.get("RANK", "0")) == 0
+
 def get_logger(filepath, logging_level=None, progressbar_color="red"):
     """
     Get logger, if logging_level is unspecified, then try using the environment variable PYTHON_LOGGER_LEVEL.
@@ -101,6 +105,9 @@ def get_logger(filepath, logging_level=None, progressbar_color="red"):
         logger.addHandler(stream_handler)
         logger.propagate = False
         set_logger_level(logger, logging_level)
+
+    for handler in logger.handlers:
+        handler.addFilter(RankZeroFilter())
 
     logger.progressbar = Progressbar(logger)
     logger.timer = Timer()

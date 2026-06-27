@@ -37,6 +37,7 @@ class OntheflyPipeline():
             webdataset.WebDataset(
                 list_files, 
                 shardshuffle=1000,
+                nodesplitter=webdataset.split_by_node,
             )
             .decode()
             .to_tuple(
@@ -52,6 +53,7 @@ class OntheflyPipeline():
                         dataset,
                         pin_memory=True,
                         batch_size=self.batch_size,
+                        drop_last=True,
                         **kwargs
                       )
 

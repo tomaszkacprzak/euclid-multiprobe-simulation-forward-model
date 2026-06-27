@@ -4,6 +4,7 @@
 Created June 2026
 Author: Tomasz Kacprzak
 """
+from tkinter import E
 import warnings
 import numpy as np
 import healpy as hp
@@ -113,7 +114,7 @@ class OntheflyPhysicsModelLinear(nn.Module):
         self.inds_all_params = {**self.inds_all_cosmo_params, **self.inds_all_bary_params, **self.inds_all_astro_params}
         self.all_params = self.cosmo_params + self.bary_params + self.astro_params
         LOGGER.info(f"All parameters: {self.all_params}")
-        LOGGER.info(f"Indices of all parameters: {self.inds_all_params}")
+        LOGGER.debug(f"Indices of all parameters: {self.inds_all_params}")
 
         # Redshift
         self.z0 = self.conf["survey"]["WL"]["z0"]
@@ -154,7 +155,8 @@ class OntheflyPhysicsModelLinear(nn.Module):
         ga = ga1 + 1j*ga2
         gd = gd1 + 1j*gd2
 
-        astro_params = self.sample_astro_parameters(cosmo.shape[0]).to(self.device)
+        astro_params = self.sample_astro_parameters(cosmo.shape[0])
+        astro_params = torch.atleast_2d(astro_params)
         targets = torch.cat([cosmo, astro_params], dim=1)
 
         #
