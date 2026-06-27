@@ -184,7 +184,6 @@ def main(indices, args):
     n_cosmos_per_file = 25
     assert n_cosmos % n_cosmos_per_file == 0
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
-    n_noise_per_signal = conf["analysis"]["grid"]["n_noise_per_signal"]
     n_examples_per_cosmo = n_patches * n_perms_per_cosmo
     LOGGER.info(
         f"for every cosmology, theres {n_examples_per_cosmo} examples: {n_patches} patches times {n_perms_per_cosmo} permutations"
@@ -206,20 +205,19 @@ def main(indices, args):
     # index corresponds to a webdataset tar file ###########################################################################
     for index in indices:
 
-        LOGGER.info(f"starting index {index}")
+        i_cosmo_set = index % n_cosmos
+        # index for the cosmological parameters
+        i_cosmo_start = (i_cosmo_set * n_cosmos_per_file) % n_cosmos
+        i_cosmo_end = ((i_cosmo_set + 1) * n_cosmos_per_file) % n_cosmos
+        i_perm = (index*n_examples_per_cosmo) // n_cosmos
+
+        LOGGER.info(f"starting index {index} i_cosmo_set={i_cosmo_set:>5d} i_perm={i_perm:>2d}/{n_perms_per_cosmo} i_cosmo_start={i_cosmo_start:>5d}/{n_cosmos} i_cosmo_end={i_cosmo_end:>5d}/{n_cosmos}")
+        LOGGER.info(f"cosmo dirs {cosmo_dirs[i_cosmo_start : i_cosmo_end]}")
         LOGGER.timer.start("index")
 
         if args.debug:
             args.dir_out = os.path.join(args.dir_out, "debug")
             os.makedirs(args.dir_out, exist_ok=True)
-
-        i_cosmo = index % n_cosmos
-        i_perm = index // n_cosmos
-
-        # index for the cosmological parameters
-        i_cosmo_start = i_cosmo * n_cosmos_per_file
-        i_cosmo_end = (i_cosmo + 1) * n_cosmos_per_file
-        LOGGER.info(f"and includes {cosmo_dirs[i_cosmo_start : i_cosmo_end]}")
 
         # initialize the webdataset tar file writer
         num_total_examples = 0
