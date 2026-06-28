@@ -4,7 +4,7 @@
 Created June 2026
 Author: Tomasz Kacprzak
 """
-from tkinter import E
+# from tkinter import E
 import warnings
 import numpy as np
 import healpy as hp
@@ -34,7 +34,7 @@ class OntheflyPhysicsModelLinear(nn.Module):
         self.seed = seed
         self.device = device
         self.astro_samples = self.get_astro_params(num_samples_prior)
-        self.shape_noise_std = 0.01
+        self.shape_noise_std = 0.03
         self.num_gal_wl = torch.from_numpy(np.array(self.conf["survey"]["WL"]["n_gal"])).to(self.device)
         self.num_gal_gc = torch.from_numpy(np.array(self.conf["survey"]["GC"]["n_gal"])).to(self.device)
         self.pixel_area = hp.nside2pixarea(self.conf["analysis"]["n_side"], degrees=True)

@@ -34,7 +34,7 @@ class OntheflyPipeline():
         LOGGER.info(f"found {len(list_files)} files")
 
         # split the files into training and validation
-        validation_fraction = 0.1
+        validation_fraction = 0.2
         if validation:
             list_files = list_files[:int(len(list_files) * validation_fraction)]
             LOGGER.info(f"using {len(list_files)} files for validation")
@@ -47,6 +47,7 @@ class OntheflyPipeline():
                 list_files, 
                 shardshuffle=1000,
                 nodesplitter=webdataset.split_by_node,
+                workersplitter=webdataset.split_by_worker,
             )
             .decode()
             .to_tuple(
