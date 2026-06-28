@@ -22,16 +22,25 @@ class OntheflyPipeline():
     """
     Sets up a dataset for the onthefly cosmologies.
     """
-    def __init__(self, webds_pattern, batch_size, physics_model, smoothing_model=None, device="cuda", **kwargs):
+    def __init__(self, webds_pattern, batch_size, physics_model, smoothing_model=None, device="cuda", validation=False, **kwargs):
 
         self.physics_model = physics_model
         self.smoothing_model = smoothing_model
         self.device = device
         self.batch_size = batch_size
-
+        
         # get webdataset dataset
         list_files = sorted(glob.glob(webds_pattern))
         LOGGER.info(f"found {len(list_files)} files")
+
+        # split the files into training and validation
+        validation_fraction = 0.1
+        if validation:
+            list_files = list_files[:int(len(list_files) * validation_fraction)]
+            LOGGER.info(f"using {len(list_files)} files for validation")
+        else:
+            list_files = list_files[int(len(list_files) * validation_fraction):]
+            LOGGER.info(f"using {len(list_files)} files for training")
 
         dataset = (
             webdataset.WebDataset(
