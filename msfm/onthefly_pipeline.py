@@ -56,7 +56,7 @@ class OntheflyPipeline():
                 "vec_int32.pth",
                 "vec_float32.pth",
             )
-            .batched(self.batch_size, partial=False)
+            # .batched(self.batch_size, partial=False)
         )
         
         # get torch DataLoader
@@ -64,9 +64,9 @@ class OntheflyPipeline():
         self.loader = webdataset.WebLoader(
                         dataset,
                         pin_memory=True,
-                        # batch_size=self.batch_size,
-                        batch_size=None,
-                        # drop_last=True,
+                        batch_size=self.batch_size,
+                        # batch_size=None,
+                        drop_last=True,
                         **kwargs
                       )
 
@@ -88,12 +88,18 @@ class OntheflyPipeline():
         
         for batch in self.loader:
 
-            with torch.profiler.record_function("batch_to_cuda"):
-                batch = tuple(tensor.to(self.device, non_blocking=True) for tensor in batch)
-            
             with torch.no_grad():
-                
-                # initial downsampling
+
+                # move to GPU
+                batch = tuple(tensor.to(self.device, non_blocking=True) for tensor in batch)
+
+                # Remove the unused fields for now
+                maps, vec_int, vec_float = batch
+                gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg = maps.unbind(dim=-1)
+                maps = torch.stack([gg1, gg2, ga1, ga2, ds, dg], dim=-1)
+                batch = (maps, vec_int, vec_float)
+
+                # initial downsampling 
                 if self.downsampler is not None:
                     maps, vec_int, vec_float = batch
                     maps = self.downsampler(maps)

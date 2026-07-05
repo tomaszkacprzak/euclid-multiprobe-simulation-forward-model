@@ -26,18 +26,19 @@ LOGGER = logger.get_logger(__file__)
 
 class OntheflyPhysicsModelLinear(nn.Module):
 
-    def __init__(self, conf, scalers=False, seed=424344, num_samples_prior=1_000_000, device=None, **kwargs):
+    def __init__(self, conf, scalers=False, seed=424344, num_samples_prior=1_000_000, device=None, nside=None, **kwargs):
 
         super().__init__()
 
         self.conf = conf
         self.seed = seed
         self.device = device
+        self.nside = nside
         self.astro_samples = self.get_astro_params(num_samples_prior)
         self.shape_noise_std = 0.03
         self.num_gal_wl = torch.from_numpy(np.array(self.conf["survey"]["WL"]["n_gal"])).to(self.device)
         self.num_gal_gc = torch.from_numpy(np.array(self.conf["survey"]["GC"]["n_gal"])).to(self.device)
-        self.pixel_area = hp.nside2pixarea(self.conf["analysis"]["n_side"], degrees=True)
+        self.pixel_area = hp.nside2pixarea(self.nside, degrees=True)
         self.sample_uniform_lo = torch.tensor(0., device=self.device, dtype=torch.float32)
         self.sample_uniform_hi = torch.tensor(2 * math.pi, device=self.device, dtype=torch.float32)
         self.num_targets = len(self.all_params)
@@ -57,7 +58,7 @@ class OntheflyPhysicsModelLinear(nn.Module):
         # channel_stds = torch.tensor([ sn, sn,  sn, sn, sn, sn, sn, sn, sn, sn, sn, sn, 6.0742157404e+01, 6.0030681612e+01, 5.8954460206e+01, 5.9754644183e+01, 5.8358482096e+01, 6.0870883217e+01, 1.0521426588e+01, 1.0446036066e+01, 1.0460830854e+01, 1.0405959759e+01, 1.0057117242e+01, 1.0407199295e+01])
         # channel_mean = torch.tensor([  0,  0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 7.3234141948e+01, 7.2668064310e+01, 7.1583784613e+01, 7.3031979277e+01, 7.1333946636e+01, 7.4637793854e+01, 1.1884575647e+01, 1.1665196170e+01, 1.2027982057e+01, 1.1937562596e+01, 1.1565197428e+01, 1.1962488818e+01]) 
         shift_channels = 0.
-        scale_channels = torch.tensor([1.]*12 + [1./10000.]*6 + [1./1000.]*6, device=self.device)
+        scale_channels = torch.tensor([1.]*12 + [1./100000.]*6 + [1./10000.]*6, device=self.device)
 
 
         # shape (1, 1, num_channels)
@@ -148,23 +149,30 @@ class OntheflyPhysicsModelLinear(nn.Module):
 
     def forward_physics(self, example):
 
+        #
+        # Preliminaries
+        #
+
         # unpack the example
         maps, vec_int, cosmo = example
-        gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg = maps.unbind(dim=-1)
-        gg = gg1 + 1j*gg2
-        ga = ga1 + 1j*ga2
-        gd = gd1 + 1j*gd2
+        # gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg = maps.unbind(dim=-1)
+        gg1, gg2, ga1, ga2, ds, dg = maps.unbind(dim=-1)
 
+        #  we will use gg1 and gg2 as lensing containers
+        gg1_tot = gg1
+        gg2_tot = gg2
+
+        # get astrophysical parameters
         astro_params = self.sample_astro_parameters(cosmo.shape[0])
         astro_params = torch.atleast_2d(astro_params)
         targets = torch.cat([cosmo, astro_params], dim=1)
+
 
         #
         # Convert bary_Mc to log10(bary_Mc)
         #
         targets[:, self.inds_all_params['bary_Mc']] = torch.log10(targets[:, self.inds_all_params['bary_Mc']])
         
-
         #
         # Linear bias map for galaxy clustering (lenses)
         #
@@ -188,30 +196,32 @@ class OntheflyPhysicsModelLinear(nn.Module):
         ns = torch.poisson(ns_lambda)
 
         #
-        # Lensing g1 g2 and shape noise
+        # Add lensing shape noise to g1 and g2
         #
-        gg_abs = torch.empty(gg.shape, dtype=torch.float32, device=self.device)
-        gg_ang = torch.distributions.Uniform(self.sample_uniform_lo, self.sample_uniform_hi).sample(gg.shape)
-        nn.init.trunc_normal_(gg_abs, mean=0.0, std=self.shape_noise_std, a=-1.0, b=1.0)
-        gg_noise = gg_abs * torch.exp(1j * gg_ang)
-        gg_noise = torch.where(ns>0, gg_noise / torch.sqrt(ns), 0)
+        gg_noise_temp = torch.empty(gg1.shape, dtype=torch.float32, device=self.device)
+
+        for gg in [gg1, gg2]:
+            nn.init.trunc_normal_(gg_noise_temp, mean=0.0, std=self.shape_noise_std/math.sqrt(2.), a=-1.0, b=1.0)
+            gg_noise_temp.div_(torch.sqrt(ns))
+            gg_noise_temp[ns==0] = 0
+            gg.add_(gg_noise_temp)
+        
 
         #
-        # Linear intrinsic alignment
+        # Add linear intrinsic alignment to g1 and g2
         #
         Aia = astro_params[:, self.inds_astro_params['Aia']]
         nAia = astro_params[:, self.inds_astro_params['n_Aia']]
         tomo_Aia = redshift.get_tomo_amplitudes_vectorized(Aia, nAia, self.tomo_z, self.tomo_nz, self.z0, backend='torch') # shape (batch_size, num_bins)
         tomo_Aia = tomo_Aia.unsqueeze(1) # shape (batch_size, 1, num_bins)
-        ga = ga * tomo_Aia
+        for ga, gg_tot in zip([ga1, ga2], [gg1_tot, gg2_tot]):
+            ga.mul_(tomo_Aia)
+            gg_tot.add_(ga)
                            
-        # 
-        # Total shear map
-        # 
-        gg_tot = gg + ga + gg_noise 
-        gg1_tot = gg_tot.real
-        gg2_tot = gg_tot.imag
 
+        # 
+        # Wrap up
+        # 
 
         # final report
         LOGGER.debug(f'gg1_tot.shape={gg1_tot.shape}, gg1_tot.dtype={gg1_tot.dtype}')
@@ -220,7 +230,8 @@ class OntheflyPhysicsModelLinear(nn.Module):
         LOGGER.debug(f'ng.shape={ng.shape}, ng.dtype={ng.dtype}')
 
         # Stack probes as channels
-        inputs = torch.cat([gg1_tot, gg2_tot, ns, ng], dim=-1)
+        inputs = torch.cat([gg1_tot, gg1_tot, ns, ng], dim=-1)
+        LOGGER.debug(f'inputs shape={inputs.shape} dtype={inputs.dtype}')
 
         return inputs, targets
 
