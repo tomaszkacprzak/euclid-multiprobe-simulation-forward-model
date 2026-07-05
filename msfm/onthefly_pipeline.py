@@ -95,12 +95,12 @@ class OntheflyPipeline():
                 
                 # initial downsampling
                 if self.downsampler is not None:
-                    print('batch[0].shape', batch[0].shape)
-                    batch[0] = self.downsampler(batch[0]) # 0-th element is the maps
-                    print('batch[0].shape', batch[0].shape)
+                    maps, vec_int, vec_float = batch
+                    maps = self.downsampler(maps)
+                    batch = (maps, vec_int, vec_float)
 
                 # add physics augmentations
-                inputs, targets = self.physics_model.forward(batch)
+                inputs, targets = self.physics_model(batch)
                 
                 # final smoothing
                 if self.smoother is not None:
