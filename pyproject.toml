@@ -39,9 +39,7 @@ dependencies = [
     "copy_guardian",
     "matplotlib",
     "astropy>=6.1.0",
-    "cuHPX",
-    "nvidia-dali-cuda130",
-    "webdataset"
+    "webdataset",
 ]
 
 
@@ -81,6 +79,4 @@ python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
 
-[tool.uv.sources]
-cuHPX = { git = "https://github.com/NVlabs/cuHPX" }
 

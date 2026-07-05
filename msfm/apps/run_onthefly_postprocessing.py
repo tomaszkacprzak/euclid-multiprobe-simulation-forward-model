@@ -263,6 +263,11 @@ def main(indices, args):
                 full_maps_file = postprocessing._get_full_sky_perm(args, conf, cosmo_dir_in, i_perm)
                 full_sky_maps = get_postprocessed_maps(conf, full_maps_file)
 
+                LOGGER.debug('full_sky_maps')
+                for m_name in full_sky_maps.keys():
+                    for i,m in enumerate(full_sky_maps[m_name]):
+                        LOGGER.debug(f"{m_name} {i}: shape={m.shape}, dtype={m.dtype}")
+                    
                 # write patches
                 for i_patch in range(n_patches):
 
@@ -287,7 +292,22 @@ def main(indices, args):
                     dg = patch_maps['dg'][..., np.newaxis]
                     qg = patch_maps['qg'][..., np.newaxis]
 
+                    LOGGER.debug(f'gg1.shape ={gg1.shape}')
+                    LOGGER.debug(f'gg2.shape ={gg2.shape}')
+                    LOGGER.debug(f'ga1.shape ={ga1.shape}')
+                    LOGGER.debug(f'ga2.shape ={ga2.shape}')
+                    LOGGER.debug(f'gd1.shape ={gd1.shape}')
+                    LOGGER.debug(f'gd2.shape ={gd2.shape}')
+                    LOGGER.debug(f'ds.shape  ={ds.shape}')
+                    LOGGER.debug(f'dg.shape  ={dg.shape}')
+                    LOGGER.debug(f'qg.shape  ={qg.shape}')
+
+                    LOGGER.warning('TODO: currently the tensor shapes assume that the number of z-bins is the same for all maps, this should be fixed')
+
                     tensor_float = np.concatenate([gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg], axis=-1)
+
+                    LOGGER.debug(f'tensor_float.shape={tensor_float.shape}')
+
                     i_signal = index * n_cosmos * n_perms_per_cosmo * n_patches    \
                                     +  i_cosmo * n_perms_per_cosmo * n_patches   \
                                     +  i_perm * n_patches   \

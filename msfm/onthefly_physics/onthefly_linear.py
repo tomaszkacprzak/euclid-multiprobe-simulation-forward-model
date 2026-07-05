@@ -180,13 +180,12 @@ class OntheflyPhysicsModelLinear(nn.Module):
         #
         # Linear bias map for galaxy clustering (sources)
         #
-        with torch.profiler.record_function("linear bias map"):
-            ng_bar = self.num_gal_wl * self.pixel_area
-            ids_bsc = [self.inds_astro_params[key] for key in self.conf["analysis"]["params"]["sc"]]
-            tomo_bsc = astro_params[:, ids_bsc].unsqueeze(1) # shape (batch_size, 1, n_WL_bins)
-            ns_lambda = clustering.galaxy_density_to_count(ng_bar, ds, bg=tomo_bsc, qdg=None, qbg=None, mg=None, cg=None, systematics_map=None, mask=None, backend='torch')
-            ns_lambda = torch.where(ds == 0, 0, ns_lambda)
-            ns = torch.poisson(ns_lambda)
+        ng_bar = self.num_gal_wl * self.pixel_area
+        ids_bsc = [self.inds_astro_params[key] for key in self.conf["analysis"]["params"]["sc"]]
+        tomo_bsc = astro_params[:, ids_bsc].unsqueeze(1) # shape (batch_size, 1, n_WL_bins)
+        ns_lambda = clustering.galaxy_density_to_count(ng_bar, ds, bg=tomo_bsc, qdg=None, qbg=None, mg=None, cg=None, systematics_map=None, mask=None, backend='torch')
+        ns_lambda = torch.where(ds == 0, 0, ns_lambda)
+        ns = torch.poisson(ns_lambda)
 
         #
         # Lensing g1 g2 and shape noise
@@ -234,7 +233,7 @@ class OntheflyPhysicsModelLinear(nn.Module):
 
 
 
-
+    
     def forward(self, example):
         
         inputs, targets = self.forward_physics(example)

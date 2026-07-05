@@ -22,10 +22,11 @@ class OntheflyPipeline():
     """
     Sets up a dataset for the onthefly cosmologies.
     """
-    def __init__(self, webds_pattern, batch_size, physics_model, smoothing_model=None, device="cuda", validation=False, **kwargs):
+    def __init__(self, webds_pattern, batch_size, physics_model, smoother=None, downsampler=None, device="cuda", validation=False, **kwargs):
 
         self.physics_model = physics_model
-        self.smoothing_model = smoothing_model
+        self.smoother = smoother
+        self.downsampler = downsampler
         self.device = device
         self.batch_size = batch_size
         
@@ -55,6 +56,7 @@ class OntheflyPipeline():
                 "vec_int32.pth",
                 "vec_float32.pth",
             )
+            .batched(self.batch_size, partial=False)
         )
         
         # get torch DataLoader
@@ -62,8 +64,9 @@ class OntheflyPipeline():
         self.loader = webdataset.WebLoader(
                         dataset,
                         pin_memory=True,
-                        batch_size=self.batch_size,
-                        drop_last=True,
+                        # batch_size=self.batch_size,
+                        batch_size=None,
+                        # drop_last=True,
                         **kwargs
                       )
 
@@ -87,19 +90,21 @@ class OntheflyPipeline():
 
             with torch.profiler.record_function("batch_to_cuda"):
                 batch = tuple(tensor.to(self.device, non_blocking=True) for tensor in batch)
-
-            # maps, vec_int, cosmo = batch
-        #    "vec_int32.pth": torch.from_numpy(np.array([i_sobol, i_signal, nside, nside_down]).astype(np.int32)), 
-            # batch_sobol_ids = ' '.join([f'{v:>5d}' for v in vec_int[:,1]])
-            # LOGGER.info(f"Batch {batch_count:>6d} sobol ids: {batch_sobol_ids}")
-
-            # add physics augmentations
+            
             with torch.no_grad():
+                
+                # initial downsampling
+                if self.downsampler is not None:
+                    print('batch[0].shape', batch[0].shape)
+                    batch[0] = self.downsampler(batch[0]) # 0-th element is the maps
+                    print('batch[0].shape', batch[0].shape)
 
-                with torch.profiler.record_function("physics forward model"):
-                    inputs, targets = self.physics_model.forward(batch)
-                    if self.smoothing_model is not None:
-                        inputs = self.smoothing_model(inputs)
+                # add physics augmentations
+                inputs, targets = self.physics_model.forward(batch)
+                
+                # final smoothing
+                if self.smoother is not None:
+                    inputs = self.smoother(inputs)
 
             LOGGER.debug(f"Batch {batch_count:>6d} physics shape = {inputs.shape}")
 
