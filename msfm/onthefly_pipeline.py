@@ -22,7 +22,7 @@ class OntheflyPipeline():
     """
     Sets up a dataset for the onthefly cosmologies.
     """
-    def __init__(self, webds_pattern, batch_size, physics_model, smoother=None, downsampler=None, device="cuda", validation=False, **kwargs):
+    def __init__(self, webds_pattern, batch_size, physics_model, smoother=None, downsampler=None, device="cuda", validation=False, num_workers=1):
 
         self.physics_model = physics_model
         self.smoother = smoother
@@ -64,10 +64,12 @@ class OntheflyPipeline():
         self.loader = webdataset.WebLoader(
                         dataset,
                         pin_memory=True,
-                        batch_size=self.batch_size,
                         # batch_size=None,
+                        num_workers=num_workers, 
+                        prefetch_factor=1, 
+                        persistent_workers=True,
+                        batch_size=self.batch_size,
                         drop_last=True,
-                        **kwargs
                       )
 
 
