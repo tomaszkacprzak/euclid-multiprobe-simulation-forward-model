@@ -124,6 +124,11 @@ def setup(args):
         default="0", 
         help="Indices to process, format: 0,1,2,4 or start>stop. Default is 0.")
 
+    parser.add_argument(
+        "--n_cosmos_per_file", 
+        type=int, 
+        default=25, 
+        help="Number of cosmologies per file. Select depending on the number of fields and nside.")
     
     parser.add_argument("--debug", action="store_true", help="activate debug mode")
 
@@ -181,7 +186,7 @@ def main(indices, args):
     # CosmoGrid
     n_patches = conf["analysis"]["n_patches"]
     n_cosmos = 2500
-    n_cosmos_per_file = 25
+    n_cosmos_per_file = args.n_cosmos_per_file
     assert n_cosmos % n_cosmos_per_file == 0
     n_perms_per_cosmo = conf["analysis"]["grid"]["n_perms_per_cosmo"]
     n_examples_per_cosmo = n_patches * n_perms_per_cosmo
