@@ -91,11 +91,18 @@ def load_pixel_file(conf=None):
         wl_tomo_patches_pix = []
         wl_tomo_corresponding_pix = []
         for z_bin in conf["survey"]["WL"]["z_bins"]:
+
             # shape (n_bins, pix_in_bin)
-            dset = f"wl/patches/{z_bin}"
+            dset = f"WL/patches/{z_bin}"
+
+            assert dset in f.keys(), f"Dataset {dset} not found in {pixel_file}"
+
             patches_pix = f[dset][:]
             # shape (pix_in_bin,)
-            corresponding_pix = f[f"WL/patch_to_data_vec/{z_bin}"][:]
+
+            dset = f"WL/patch_to_data_vec/{z_bin}"
+            assert dset in f.keys(), f"Dataset {dset} not found in {pixel_file}"
+            corresponding_pix = f[dset][:]
 
             wl_tomo_patches_pix.append(patches_pix)
             wl_tomo_corresponding_pix.append(corresponding_pix)
@@ -107,8 +114,14 @@ def load_pixel_file(conf=None):
         gc_tomo_patches_pix = []
         gc_tomo_corresponding_pix = []
         for z_bin in conf["survey"]["GC"]["z_bins"]:
-            patches_pix = f[f"GC/patches/{z_bin}"][:]
-            corresponding_pix = f[f"GC/patch_to_data_vec/{z_bin}"][:]
+
+            dset = f"GC/patches/{z_bin}"
+            assert dset in f.keys(), f"Dataset {dset} not found in {pixel_file}"
+            patches_pix = f[dset][:]
+
+            dset = f"GC/patch_to_data_vec/{z_bin}"
+            assert dset in f.keys(), f"Dataset {dset} not found in {pixel_file}"
+            corresponding_pix = f[dset][:]
 
             gc_tomo_patches_pix.append(patches_pix)
             gc_tomo_corresponding_pix.append(corresponding_pix)

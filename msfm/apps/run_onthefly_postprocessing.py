@@ -196,9 +196,12 @@ def main(indices, args):
     pixel_file = files.load_pixel_file(conf)
     nside = int(conf["analysis"]["n_side"])
     nside_down = int(conf["analysis"]["n_side_down"])
+    
 
     # constants
-    full_sky_samples = {"gg":'WL', "ga":'WL', "ds":'WL', "gd":'WL', "dg":'GC', "qg":'GC'}
+    maps_to_store = conf["survey"]["WL"]["map_types"]["onthefly_store"] + conf["survey"]["GC"]["map_types"]["onthefly_store"]
+    full_sky_samples = {"kg":'WL', "ia":'WL', "gg":'WL', "ga":'WL', "ds":'WL', "gd":'WL', "dg":'GC', "qg":'GC'}
+    LOGGER.info(f"nside={nside} nside_down={nside_down} maps_to_store={maps_to_store}")
 
     LOGGER.info(f"starting the main loop trough indices {indices}")
 
@@ -285,26 +288,28 @@ def main(indices, args):
                     # maps_float = torch.from_numpy(np.concatenate([patch_maps[m_name][..., np.newaxis] for m_name in ['ds', 'dg', 'qg']], axis=-1))
                     # vec_int = torch.from_numpy(np.array([i_sobol, i_signal, n_z_WL, n_z_GC]))
 
-                    gg1, gg2 = patch_maps['gg'].real[..., np.newaxis], patch_maps['gg'].imag[..., np.newaxis]
-                    ga1, ga2 = patch_maps['ga'].real[..., np.newaxis], patch_maps['ga'].imag[..., np.newaxis]
-                    gd1, gd2 = patch_maps['gd'].real[..., np.newaxis], patch_maps['gd'].imag[..., np.newaxis]
-                    ds = patch_maps['ds'][..., np.newaxis]
-                    dg = patch_maps['dg'][..., np.newaxis]
-                    qg = patch_maps['qg'][..., np.newaxis]
+                    list_maps_to_store = []
+                    list_channels = []
 
-                    LOGGER.debug(f'gg1.shape ={gg1.shape}')
-                    LOGGER.debug(f'gg2.shape ={gg2.shape}')
-                    LOGGER.debug(f'ga1.shape ={ga1.shape}')
-                    LOGGER.debug(f'ga2.shape ={ga2.shape}')
-                    LOGGER.debug(f'gd1.shape ={gd1.shape}')
-                    LOGGER.debug(f'gd2.shape ={gd2.shape}')
-                    LOGGER.debug(f'ds.shape  ={ds.shape}')
-                    LOGGER.debug(f'dg.shape  ={dg.shape}')
-                    LOGGER.debug(f'qg.shape  ={qg.shape}')
+                    for m_name in maps_to_store:
+                            
+                        m = patch_maps[m_name][..., np.newaxis]
 
-                    LOGGER.warning('TODO: currently the tensor shapes assume that the number of z-bins is the same for all maps, this should be fixed')
+                        LOGGER.debug(f'{m_name} shape={m.shape} dtype={m.dtype}')
 
-                    tensor_float = np.concatenate([gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg], axis=-1)
+                        if np.issubdtype(m.dtype, np.complexfloating):
+                            list_maps_to_store.extend([m.real, m.imag])
+                            list_channels.extend([m_name+'1', m_name+'2'])
+                        elif np.issubdtype(m.dtype, np.floating):
+                            list_maps_to_store.append(m)
+                            list_channels.append(m_name)
+                        else:
+                            raise ValueError(f"Unsupported dtype: {m.dtype}")
+
+                    tensor_float = np.concatenate(list_maps_to_store, axis=-1)
+
+                    # LOGGER.warning('TODO: currently the tensor shapes assume that the number of z-bins is the same for all maps, this should be fixed')
+
 
                     LOGGER.debug(f'tensor_float.shape={tensor_float.shape}')
 
@@ -327,7 +332,7 @@ def main(indices, args):
                     num_total_examples += 1
 
                     
-                    LOGGER.info(f"wrote example to {wds_file} i_cosmo={i_cosmo:>5d} i_perm={i_perm:>2d}, i_patch={i_patch:>2d}, i_signal={i_signal:>8d}")
+                    LOGGER.info(f"wrote example to {wds_file} i_cosmo={i_cosmo:>5d} i_perm={i_perm:>2d}, i_patch={i_patch:>2d}, i_signal={i_signal:>8d} channels={list_channels}")
                     for key in patch_maps.keys():
                         LOGGER.debug(f"{key}.shape={patch_maps[key].shape}, dtype={patch_maps[key].dtype}")
 
@@ -354,26 +359,39 @@ def get_postprocessed_maps(conf, full_maps_file):
 
 
     # container
-    full_sky_maps = {"gg": [], "ga": [], "gd": [], "ds": [], "dg": [], "qg": []}
+    full_sky_maps = {"kg": [], "ia": [], "gg": [], "ga": [], "gd": [], "ds": [], "dg": [], "qg": []}
 
     # loop over lensing bins
     for i_z, z_bin in enumerate(z_bins_WL):
 
         ##
-        ## Lensing shear
+        ## Lensing convergence
         ##
 
         kg = postprocessing._read_full_sky_bin(conf, full_maps_file, "kg", z_bin)
+        full_sky_maps["kg"].append(kg.astype(np.float32))
+
+        ##
+        ## Lensing shear
+        ##
+
         # kappa to shear conversion for lensing signal
         g1_, g2_ = lensing.kappa_to_gamma(kg, hp_datapath, kappa2gamma_fac, n_side)
         gg_ = g1_ + 1j*g2_
         full_sky_maps["gg"].append(gg_.astype(np.complex64))
 
         ##
-        ## Linear intrinsic alignment
+        ## Linear intrinsic alignment convergence
         ##
 
         ia = postprocessing._read_full_sky_bin(conf, full_maps_file, "ia", z_bin)
+        full_sky_maps["ia"].append(ia.astype(np.float32))
+
+
+        ##
+        ## Linear intrinsic alignment shape
+        ##
+
         # kappa to shear conversion for intrinsic alignment
         g1_, g2_ = lensing.kappa_to_gamma(ia, hp_datapath, kappa2gamma_fac, n_side)
         ga_ = g1_ + 1j*g2_
@@ -404,7 +422,6 @@ def get_postprocessed_maps(conf, full_maps_file):
 
         dg_ = postprocessing._read_full_sky_bin(conf, full_maps_file, "dg", z_bin)
         full_sky_maps["dg"].append(dg_.astype(np.float32))
-
 
         ##
         ## Quadratic galaxy counts
@@ -483,3 +500,28 @@ if __name__ == "__main__":
         LOGGER.info(f"Saved inputs to {fname} size={inputs.nbytes/1024**2:.2f} MB")
 
 
+# Code graveyard:
+
+
+                    # kg = patch_maps['kg'][..., np.newaxis]
+                    # ia = patch_maps['ia'][..., np.newaxis]
+                    # gg1, gg2 = patch_maps['gg'].real[..., np.newaxis], patch_maps['gg'].imag[..., np.newaxis]
+                    # ga1, ga2 = patch_maps['ga'].real[..., np.newaxis], patch_maps['ga'].imag[..., np.newaxis]
+                    # gd1, gd2 = patch_maps['gd'].real[..., np.newaxis], patch_maps['gd'].imag[..., np.newaxis]
+                    # ds = patch_maps['ds'][..., np.newaxis]
+                    # dg = patch_maps['dg'][..., np.newaxis]
+                    # qg = patch_maps['qg'][..., np.newaxis]
+
+                    # LOGGER.debug(f'kg.shape ={kg.shape}')
+                    # LOGGER.debug(f'ia.shape ={ia.shape}')
+                    # LOGGER.debug(f'gg1.shape ={gg1.shape}')
+                    # LOGGER.debug(f'gg2.shape ={gg2.shape}')
+                    # LOGGER.debug(f'ga1.shape ={ga1.shape}')
+                    # LOGGER.debug(f'ga2.shape ={ga2.shape}')
+                    # LOGGER.debug(f'gd1.shape ={gd1.shape}')
+                    # LOGGER.debug(f'gd2.shape ={gd2.shape}')
+                    # LOGGER.debug(f'ds.shape  ={ds.shape}')
+                    # LOGGER.debug(f'dg.shape  ={dg.shape}')
+                    # LOGGER.debug(f'qg.shape  ={qg.shape}')
+
+                    # tensor_float = np.concatenate([kg, ia, gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg], axis=-1)
