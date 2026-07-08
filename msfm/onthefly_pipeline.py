@@ -97,9 +97,6 @@ class OntheflyPipeline():
 
                 # Remove the unused fields for now
                 maps, vec_int, vec_float = batch
-                gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg = maps.unbind(dim=-1)
-                maps = torch.stack([gg1, gg2, ga1, ga2, ds, dg], dim=-1)
-                batch = (maps, vec_int, vec_float)
 
                 # initial downsampling 
                 if self.downsampler is not None:

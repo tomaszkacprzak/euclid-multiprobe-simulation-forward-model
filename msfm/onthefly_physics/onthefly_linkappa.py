@@ -35,7 +35,7 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         self.device = device
         self.nside = nside
         self.astro_samples = self.get_astro_params(num_samples_prior)
-        self.shape_noise_std = 0.03
+        self.shape_noise_std = 0.3
         self.num_gal_wl = torch.from_numpy(np.array(self.conf["survey"]["WL"]["n_gal"])).to(self.device)
         self.num_gal_gc = torch.from_numpy(np.array(self.conf["survey"]["GC"]["n_gal"])).to(self.device)
         self.pixel_area = hp.nside2pixarea(self.nside, degrees=True)
