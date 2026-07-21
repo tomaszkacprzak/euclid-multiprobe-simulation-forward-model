@@ -86,7 +86,7 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
 
     def set_params(self):
 
-        self.params = ['Om', 's8', 'Ob', 'H0', 'ns', 'w0', 'bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'Aia1', 'Aia2', 'Aia3', 'Aia4', 'Aia5', 'Aia6', 'bsc1', 'bsc2', 'bsc3', 'bsc4', 'bsc5', 'bsc6']
+        self.params = ['Om', 's8', 'Ob', 'H0', 'ns', 'w0', 'bary_Mc', 'bary_nu', 'bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'Aia1', 'Aia2', 'Aia3', 'Aia4', 'Aia5', 'Aia6', 'bsc1', 'bsc2', 'bsc3', 'bsc4', 'bsc5', 'bsc6']
 
         # from Table 1 in https://arxiv.org/pdf/2201.07771
         self.priors = {
@@ -97,6 +97,8 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
             'Ob':   [0.03, 0.06],
             'ns':   [0.87, 1.07],
             'w0':   [-2, -0.333],
+            'bary_Mc': [12.0, 15.0], # log10(bary_Mc)
+            'bary_nu': [-2, 2.0],
             'bg1':  [0.8, 3.0],
             'bg2':  [0.8, 3.0],
             'bg3':  [0.8, 3.0],
@@ -162,8 +164,8 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         assert maps.shape[2] == 6, f"Expected 6 redshift bins per map, got {maps.shape[2]}"
         assert maps.shape[3] == 4, f"Expected 4 map types, got {maps.shape[3]}"
 
-        # remove the baryonification parameters - these should have been remvoed before
-        hard_params = hard_params[:, :6] # baryonification parameters are at the end of the array
+        # convert bary_Mc to log10(bary_Mc)
+        targets[:, 6] = torch.log10(targets[:, 6])
 
         # split into lensing, IA, and galaxy clustering maps
         kg, ia, ds, dg = maps.unbind(dim=-1)
@@ -182,7 +184,7 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
 
         # get mean number of galaxies per pixel
         ng_bar = self.num_gal_gc * self.pixel_area
-        ids_bg = [6, 7, 8, 9, 10, 11] # bg1, bg2, bg3, bg4, bg5, bg6
+        ids_bg = [8, 9, 10, 11, 12, 13] # bg1, bg2, bg3, bg4, bg5, bg6
         tomo_bg = targets[:, ids_bg].unsqueeze(1) # shape (batch_size, 1, n_GC_bins)
         assert dg.shape[-1] == tomo_bg.shape[-1], "The number of bias parameters must match the number of tomographic bins"
         # convert density contrast to mean number counts
@@ -195,7 +197,7 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
 
         # get mean number of galaxies per pixel
         ng_bar = self.num_gal_wl * self.pixel_area
-        ids_bsc = [18, 19, 20, 21, 22, 23] # bsc1, bsc2, bsc3, bsc4, bsc5, bsc6
+        ids_bsc = [20, 21, 22, 23, 24, 25] # bsc1, bsc2, bsc3, bsc4, bsc5, bsc6
         tomo_bsc = targets[:, ids_bsc].unsqueeze(1) # shape (batch_size, 1, n_WL_bins)
         ns = galaxy_density_to_count(ng_bar, ds, tomo_bsc)
         LOGGER.debug(f'drawn poisson galaxy clustering map ns={ns.shape} min={ns.min():>10.3f} max={ns.max():>10.3f} mean={ns.mean():>10.3f}')
@@ -213,7 +215,7 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         #
         # Add linear intrinsic alignment to kappa
         #
-        ids_ia = [12, 13, 14, 15, 16, 17] # Aia1, Aia2, Aia3, Aia4, Aia5, Aia6
+        ids_ia = [14, 15, 16, 17, 18, 19] # Aia1, Aia2, Aia3, Aia4, Aia5, Aia6
         tomo_Aia = targets[:, ids_ia].unsqueeze(1) # shape (batch_size, 1, num_bins)
         ia.mul_(tomo_Aia)
         kg_tot.add_(ia)
