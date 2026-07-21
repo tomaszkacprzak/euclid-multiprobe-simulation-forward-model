@@ -164,9 +164,6 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         assert maps.shape[2] == 6, f"Expected 6 redshift bins per map, got {maps.shape[2]}"
         assert maps.shape[3] == 4, f"Expected 4 map types, got {maps.shape[3]}"
 
-        # convert bary_Mc to log10(bary_Mc)
-        targets[:, 6] = torch.log10(targets[:, 6])
-
         # split into lensing, IA, and galaxy clustering maps
         kg, ia, ds, dg = maps.unbind(dim=-1)
 
@@ -177,6 +174,9 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         onthefly_params = self.sample_onthefly_parameters(hard_params.shape[0])
         onthefly_params = torch.atleast_2d(onthefly_params)
         targets = torch.cat([hard_params, onthefly_params], dim=1)
+
+        # convert bary_Mc to log10(bary_Mc)
+        targets[:, 6] = torch.log10(targets[:, 6])
 
         #
         # Linear bias map for galaxy clustering (lenses)
