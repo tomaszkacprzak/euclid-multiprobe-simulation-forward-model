@@ -17,12 +17,29 @@ from torch.utils.data import DataLoader
 from msfm.utils import logger
 from msfm.onthefly_pipeline import OntheflyPipeline
 # from msfm.onthefly_physics.onthefly_base import OntheflyPhysicsModel
-from msfm.utils import parameters, prior, clustering, redshift, files
+from msfm.utils import  prior, clustering
 
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 warnings.filterwarnings("ignore", category=RuntimeWarning)
 warnings.filterwarnings("once", category=UserWarning)
 LOGGER = logger.get_logger(__file__)
+
+
+
+def galaxy_density_to_count(ng_bar, dg, bg):
+    """
+    Convert density contrast to mean number counts.
+    """
+
+    # get mean number of galaxies per pixel
+    ng = (1 + bg * dg) * ng_bar
+    # remove negative values
+    ng_clip = torch.clamp(ng, min=0, max=1e6)
+    # adjust so that the total is conserved
+    ng_lambda = ng_clip * torch.sum(ng) / torch.sum(ng_clip)
+    # draw Poisson noise
+    ng = torch.poisson(ng_lambda)
+    return ng
 
 class OntheflyPhysicsModelLinkappa(nn.Module):
 
@@ -30,18 +47,20 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
 
         super().__init__()
 
+        self.model_name = "linkappa_dmo"
         self.conf = conf
         self.seed = seed
         self.device = device
         self.nside = nside
-        self.astro_samples = self.get_astro_params(num_samples_prior)
+        self.set_params()
+        self.onthefly_samples = self.get_onthefly_params(num_samples_prior)
         self.shape_noise_std = 0.3
         self.num_gal_wl = torch.from_numpy(np.array(self.conf["survey"]["WL"]["n_gal"])).to(self.device)
         self.num_gal_gc = torch.from_numpy(np.array(self.conf["survey"]["GC"]["n_gal"])).to(self.device)
         self.pixel_area = hp.nside2pixarea(self.nside, degrees=True)
         self.sample_uniform_lo = torch.tensor(0., device=self.device, dtype=torch.float32)
         self.sample_uniform_hi = torch.tensor(2 * math.pi, device=self.device, dtype=torch.float32)
-        self.num_targets = len(self.all_params)
+        self.num_targets = len(self.params)
         self.num_channels = 18
         # self.param_names = ['Om', 's8', 'Ob', 'H0', 'ns', 'w0', 'bary_Mc', 'bary_nu', 'Aia', 'n_Aia', 'bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'bsc1', 'bsc2', 'bsc3', 'bsc4', 'bsc5', 'bsc6']
         self.scalers = scalers
@@ -55,8 +74,8 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         shift_channels = 0.
         scale_channels = torch.tensor([1.]*6 + [1./100000.]*6 + [1./10000.]*6, device=self.device)
 
-        list_min = torch.tensor([self.conf['analysis']['grid']['priors'][p][0] for p in self.all_params], device=self.device, dtype=torch.float32)
-        list_max = torch.tensor([self.conf['analysis']['grid']['priors'][p][1] for p in self.all_params], device=self.device, dtype=torch.float32)
+        list_min = torch.tensor([self.priors[p][0] for p in self.params], device=self.device, dtype=torch.float32)
+        list_max = torch.tensor([self.priors[p][1] for p in self.params], device=self.device, dtype=torch.float32)
         shift_targets = -list_min
         scale_targets = 1./(list_max-list_min)
 
@@ -65,58 +84,69 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         self.channel_shift = shift_channels #.reshape(1, 1, -1).to(self.device)
         self.channel_scale = scale_channels.reshape(1, 1, -1).to(self.device)
 
-    def get_astro_params(self, num_samples_prior):
-        
-        # Read pre-computed parameters from configs
-        self.cosmo_params = self.conf["analysis"]["params"]["cosmo"]
-        self.bary_params = self.conf["analysis"]["params"]["bary"]
+    def set_params(self):
 
-        # Create on-the-fly parameters from config
-        self.astro_params  = self.conf["analysis"]["params"]["ia"]["nla"]
-        self.astro_params += self.conf["analysis"]["params"]["bg"]["linear"]
-        self.astro_params += self.conf["analysis"]["params"]["sc"]
+        self.params = ['Om', 's8', 'Ob', 'H0', 'ns', 'w0', 'bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'Aia1', 'Aia2', 'Aia3', 'Aia4', 'Aia5', 'Aia6', 'bsc1', 'bsc2', 'bsc3', 'bsc4', 'bsc5', 'bsc6']
 
-        # Indices of parameters
-        self.inds_cosmo_params = {key:i for i, key in enumerate(self.cosmo_params)}
-        self.inds_bary_params = {key:i for i, key in enumerate(self.bary_params)}
-        self.inds_astro_params = {key:i for i, key in enumerate(self.astro_params)}
-        self.inds_all_cosmo_params = {key:i for i, key in enumerate(self.cosmo_params)}
-        self.inds_all_bary_params = {key:i+len(self.cosmo_params) for i, key in enumerate(self.bary_params)}
-        self.inds_all_astro_params = {key:i+len(self.cosmo_params)+len(self.bary_params) for i, key in enumerate(self.astro_params)}
-        self.inds_all_params = {**self.inds_all_cosmo_params, **self.inds_all_bary_params, **self.inds_all_astro_params}
-        self.all_params = self.cosmo_params + self.bary_params + self.astro_params
-        LOGGER.info(f"All parameters: {self.all_params}")
-        LOGGER.debug(f"Indices of all parameters: {self.inds_all_params}")
+        # from Table 1 in https://arxiv.org/pdf/2201.07771
+        self.priors = {
+            'Om':   [0.1, 0.5],
+            's8':   [0.4, 1.4],
+            'S8':   [0.23094010767585035, 1.8073922282301278],
+            'H0':   [64, 82],
+            'Ob':   [0.03, 0.06],
+            'ns':   [0.87, 1.07],
+            'w0':   [-2, -0.333],
+            'bg1':  [0.8, 3.0],
+            'bg2':  [0.8, 3.0],
+            'bg3':  [0.8, 3.0],
+            'bg4':  [0.8, 3.0],
+            'bg5':  [0.8, 3.0],
+            'bg6':  [0.8, 3.0],
+            'Aia1': [-0.5, 1.5],
+            'Aia2': [-0.5, 1.5],
+            'Aia3': [-0.5, 1.5],
+            'Aia4': [-0.5, 1.5],
+            'Aia5': [-0.5, 1.5],
+            'Aia6': [-0.5, 1.5],
+            'bsc1': [1.0, 2.0],
+            'bsc2': [1.0, 2.0],
+            'bsc3': [1.0, 2.0],
+            'bsc4': [1.0, 2.0],
+            'bsc5': [1.0, 2.0],
+            'bsc6': [1.0, 2.0],
+        }
 
-        # Redshift
-        self.z0 = self.conf["survey"]["WL"]["z0"]
-        self.tomo_z, self.tomo_nz = files.load_redshift_distributions("WL", self.conf)
-        if self.conf["analysis"]["modelling"]["WL"]["nla"]["truncate_nz"]:
-            self.tomo_z, self.tomo_nz = redshift.get_tomo_nz_arrays_truncated(self.tomo_z, self.tomo_nz, 
-                                                                                z_min_quantile=float(self.conf["analysis"]["modelling"]["WL"]["nla"]["z_min_quantile"]), 
-                                                                                z_max_quantile=float(self.conf["analysis"]["modelling"]["WL"]["nla"]["z_max_quantile"]))
-        self.tomo_z = torch.tensor(self.tomo_z, dtype=torch.float32, device=self.device)
-        self.tomo_nz = torch.tensor(self.tomo_nz, dtype=torch.float32, device=self.device)
+        for param in self.params:
+            assert param in self.priors, f"Parameter {param} not found in priors"
+
+        LOGGER.info(f"Model {self.model_name} parameters: {self.params}")
+
+
+    def get_onthefly_params(self, num_samples_prior):
+
+        self.onthefly_params = ['bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'Aia1', 'Aia2', 'Aia3', 'Aia4', 'Aia5', 'Aia6', 'bsc1', 'bsc2', 'bsc3', 'bsc4', 'bsc5', 'bsc6']
+        self.onthefly_priors = {key:self.priors[key] for key in self.onthefly_params}
+        onthefly_priors_bounds = np.array([self.onthefly_priors[key] for key in self.onthefly_params])
         
         # Pre-generate samples from latin hypercube
-        self.astro_priors = parameters.get_prior_intervals(self.astro_params, conf=self.conf)
-        self.astro_samples = prior.sample_astro_parameters_latin_hypercube(
-            self.astro_params, 
+        self.onthefly_samples = prior.sample_astro_parameters_latin_hypercube(
+            self.onthefly_params, 
             seed=self.conf['master_seed']+self.seed, 
             n_examples=num_samples_prior, 
-            astro_priors=self.astro_priors)
+            astro_priors=onthefly_priors_bounds)
 
-        LOGGER.info(f"Sampled astrophysical parameters: {self.astro_samples.shape}")
-        for i, param_name in enumerate(self.astro_params):
-            p_ = self.astro_samples[:, i]
+        LOGGER.info(f"Sampled onthefly parameters: {self.onthefly_samples.shape}")
+        for i, param_name in enumerate(self.onthefly_params):
+            p_ = self.onthefly_samples[:, i]
             LOGGER.info(f"   {param_name:>20s}  min={np.min(p_): 8.3f} max={np.max(p_): 8.3f} mean={np.mean(p_): 8.3f}")
 
-        return torch.from_numpy(self.astro_samples).to(self.device)
+        return torch.from_numpy(self.onthefly_samples).to(self.device)
 
-    def sample_astro_parameters(self, batch_size):
+    def sample_onthefly_parameters(self, batch_size):
 
-        j = torch.randint(0, self.astro_samples.shape[0], (batch_size,), device=self.device)
-        return self.astro_samples[j].squeeze().to(self.device)
+        j = torch.randint(0, self.onthefly_samples.shape[0], (batch_size,), device=self.device)
+        return self.onthefly_samples[j].squeeze().to(self.device)
 
     def forward_physics(self, example):
 
@@ -125,51 +155,55 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         #
 
         # unpack the example
-        maps, vec_int, cosmo = example
-        # gg1, gg2, ga1, ga2, gd1, gd2, ds, dg, qg = maps.unbind(dim=-1)
+        maps, vec_int, hard_params = example
+
+        # this was created in the postprocessing pipeline, check if we are using the right data
+        assert hard_params.shape[1] == 8, f"Expected 8 parameters, got {hard_params.shape[1]}"
+        assert maps.shape[2] == 6, f"Expected 6 redshift bins per map, got {maps.shape[2]}"
+        assert maps.shape[3] == 4, f"Expected 4 map types, got {maps.shape[3]}"
+
+        # remove the baryonification parameters - these should have been remvoed before
+        hard_params = hard_params[:, :6] # baryonification parameters are at the end of the array
+
+        # split into lensing, IA, and galaxy clustering maps
         kg, ia, ds, dg = maps.unbind(dim=-1)
 
         #  we will use kg_tot and as lensing container
         kg_tot = kg
 
-        # get astrophysical parameters
-        astro_params = self.sample_astro_parameters(cosmo.shape[0])
-        astro_params = torch.atleast_2d(astro_params)
-        targets = torch.cat([cosmo, astro_params], dim=1)
+        # get onthefly parameters
+        onthefly_params = self.sample_onthefly_parameters(hard_params.shape[0])
+        onthefly_params = torch.atleast_2d(onthefly_params)
+        targets = torch.cat([hard_params, onthefly_params], dim=1)
 
-
-        #
-        # Convert bary_Mc to log10(bary_Mc)
-        #
-        targets[:, self.inds_all_params['bary_Mc']] = torch.log10(targets[:, self.inds_all_params['bary_Mc']])
-        
         #
         # Linear bias map for galaxy clustering (lenses)
         #
+
+        # get mean number of galaxies per pixel
         ng_bar = self.num_gal_gc * self.pixel_area
-        ids_bg = [self.inds_astro_params[key] for key in self.conf["analysis"]["params"]["bg"]["linear"]]
-        tomo_bg = astro_params[:, ids_bg].unsqueeze(1) # shape (batch_size, 1, n_GC_bins)
+        ids_bg = [6, 7, 8, 9, 10, 11] # bg1, bg2, bg3, bg4, bg5, bg6
+        tomo_bg = targets[:, ids_bg].unsqueeze(1) # shape (batch_size, 1, n_GC_bins)
         assert dg.shape[-1] == tomo_bg.shape[-1], "The number of bias parameters must match the number of tomographic bins"
-        ng_lambda = clustering.galaxy_density_to_count(ng_bar, dg, bg=tomo_bg, qdg=None, qbg=None, mg=None, cg=None, systematics_map=None, mask=None, backend='torch')
-        ng_lambda = torch.where(dg == 0, 0, ng_lambda)
-        ng = torch.poisson(ng_lambda)
+        # convert density contrast to mean number counts
+        ng = galaxy_density_to_count(ng_bar, dg, tomo_bg)
         LOGGER.debug(f'drawn poisson galaxy clustering map ng={ng.shape} min={ng.min():>10.3f} max={ng.max():>10.3f} mean={ng.mean():>10.3f}')
 
         #
         # Linear bias map for galaxy clustering (sources)
         #
+
+        # get mean number of galaxies per pixel
         ng_bar = self.num_gal_wl * self.pixel_area
-        ids_bsc = [self.inds_astro_params[key] for key in self.conf["analysis"]["params"]["sc"]]
-        tomo_bsc = astro_params[:, ids_bsc].unsqueeze(1) # shape (batch_size, 1, n_WL_bins)
-        ns_lambda = clustering.galaxy_density_to_count(ng_bar, ds, bg=tomo_bsc, qdg=None, qbg=None, mg=None, cg=None, systematics_map=None, mask=None, backend='torch')
-        ns_lambda = torch.where(ds == 0, 0, ns_lambda)
-        ns = torch.poisson(ns_lambda)
+        ids_bsc = [18, 19, 20, 21, 22, 23] # bsc1, bsc2, bsc3, bsc4, bsc5, bsc6
+        tomo_bsc = targets[:, ids_bsc].unsqueeze(1) # shape (batch_size, 1, n_WL_bins)
+        ns = galaxy_density_to_count(ng_bar, ds, tomo_bsc)
+        LOGGER.debug(f'drawn poisson galaxy clustering map ns={ns.shape} min={ns.min():>10.3f} max={ns.max():>10.3f} mean={ns.mean():>10.3f}')
 
         #
-        # Add lensing shape noise to g1 and g2
+        # Add lensing shape noise to kappa
         #
         kg_noise_temp = torch.empty(kg.shape, dtype=torch.float32, device=self.device)
-
         nn.init.trunc_normal_(kg_noise_temp, mean=0.0, std=self.shape_noise_std/math.sqrt(2.), a=-1.0, b=1.0)
         kg_noise_temp.div_(torch.sqrt(ns))
         kg_noise_temp[ns==0] = 0
@@ -177,12 +211,10 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         
 
         #
-        # Add linear intrinsic alignment to g1 and g2
+        # Add linear intrinsic alignment to kappa
         #
-        Aia = astro_params[:, self.inds_astro_params['Aia']]
-        nAia = astro_params[:, self.inds_astro_params['n_Aia']]
-        tomo_Aia = redshift.get_tomo_amplitudes_vectorized(Aia, nAia, self.tomo_z, self.tomo_nz, self.z0, backend='torch') # shape (batch_size, num_bins)
-        tomo_Aia = tomo_Aia.unsqueeze(1) # shape (batch_size, 1, num_bins)
+        ids_ia = [12, 13, 14, 15, 16, 17] # Aia1, Aia2, Aia3, Aia4, Aia5, Aia6
+        tomo_Aia = targets[:, ids_ia].unsqueeze(1) # shape (batch_size, 1, num_bins)
         ia.mul_(tomo_Aia)
         kg_tot.add_(ia)
                            
