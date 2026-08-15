@@ -115,6 +115,6 @@ class OntheflyPipeline():
 
             batch_count += 1
 
-            yield inputs, targets
+            yield inputs, targets, vec_int
 
 

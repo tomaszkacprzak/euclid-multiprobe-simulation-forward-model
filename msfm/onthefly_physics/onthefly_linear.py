@@ -54,27 +54,8 @@ class OntheflyPhysicsModelLinear(nn.Module):
 
         # ['Om', 's8', 'Ob', 'H0', 'ns', 'w0', 'bary_Mc', 'bary_nu', 'Aia', 'n_Aia', 'bg1', 'bg2', 'bg3', 'bg4', 'bg5', 'bg6', 'bsc1', 'bsc2', 'bsc3', 'bsc4', 'bsc5', 'bsc6']
 
-        # sn=0.01
-        # channel_stds = torch.tensor([ sn, sn,  sn, sn, sn, sn, sn, sn, sn, sn, sn, sn, 6.0742157404e+01, 6.0030681612e+01, 5.8954460206e+01, 5.9754644183e+01, 5.8358482096e+01, 6.0870883217e+01, 1.0521426588e+01, 1.0446036066e+01, 1.0460830854e+01, 1.0405959759e+01, 1.0057117242e+01, 1.0407199295e+01])
-        # channel_mean = torch.tensor([  0,  0,   0,  0,  0,  0,  0,  0,  0,  0,  0,  0, 7.3234141948e+01, 7.2668064310e+01, 7.1583784613e+01, 7.3031979277e+01, 7.1333946636e+01, 7.4637793854e+01, 1.1884575647e+01, 1.1665196170e+01, 1.2027982057e+01, 1.1937562596e+01, 1.1565197428e+01, 1.1962488818e+01]) 
         shift_channels = 0.
         scale_channels = torch.tensor([1.]*12 + [1./100000.]*6 + [1./10000.]*6, device=self.device)
-
-
-        # shape (1, 1, num_channels)
-        # self.channel_scale = scale_channels.reshape(1, 1, -1).to(self.device)
-        # self.channel_shift = shift_channels.reshape(1, 1, -1).to(self.device)
-
-        
-        # list_min = torch.tensor([0.1, 0.4, 0.03, 64, 0.87,     -2, 12.0,  -2,  -3,  -4, 0.8, 0.8, 0.8, 0.8, 0.8, 0.8, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0])
-        # list_max = torch.tensor([0.5, 1.4, 0.06, 82, 1.07, -0.333, 15.0, 2.0, 3.0, 6.0, 3.0, 3.0, 3.0, 3.0, 3.0, 3.0, 2.0, 2.0, 2.0, 2.0, 2.0, 2.0])
-        # shift_targets = list_min
-        # scale_targets = 1/(list_max-list_min)
-
-
-        # shape (1, num_targets)
-        # self.targets_scale = scale_targets.reshape(1, -1).to(self.device)
-        # self.targets_shift = shift_targets.reshape(1, -1).to(self.device)
 
         list_min = torch.tensor([self.conf['analysis']['grid']['priors'][p][0] for p in self.all_params], device=self.device, dtype=torch.float32)
         list_max = torch.tensor([self.conf['analysis']['grid']['priors'][p][1] for p in self.all_params], device=self.device, dtype=torch.float32)
@@ -86,13 +67,6 @@ class OntheflyPhysicsModelLinear(nn.Module):
         self.channel_shift = shift_channels #.reshape(1, 1, -1).to(self.device)
         self.channel_scale = scale_channels.reshape(1, 1, -1).to(self.device)
         
-
-        # self.channel_scale = torch.ones(self.num_channels, device=self.device)
-        # self.channel_shift = torch.zeros(self.num_channels, device=self.device)
-        # self.targets_scale = torch.ones(self.num_targets, device=self.device)
-        # self.targets_shift = torch.zeros(self.num_targets, device=self.device)
-
-
 
     def get_astro_params(self, num_samples_prior):
         
