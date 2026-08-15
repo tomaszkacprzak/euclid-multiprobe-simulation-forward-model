@@ -230,7 +230,7 @@ class OntheflyPhysicsModelLinear(nn.Module):
         LOGGER.debug(f'ng.shape={ng.shape}, ng.dtype={ng.dtype}')
 
         # Stack probes as channels
-        inputs = torch.cat([gg1_tot, gg1_tot, ns, ng], dim=-1)
+        inputs = torch.cat([gg1_tot, gg2_tot, ns, ng], dim=-1)
         LOGGER.debug(f'inputs shape={inputs.shape} dtype={inputs.dtype}')
 
         return inputs, targets
@@ -254,6 +254,27 @@ class OntheflyPhysicsModelLinear(nn.Module):
 
         return inputs, targets
 
+    def unstack_batch_channels(self, inputs):
+        """
+        Unstack the channels of the input tensor into a list of maps.
+        Spin2 maps are stacked into a single tensor.
+        Inputs: 
+            inputs: tensor of shape (batch_size, num_pixels, num_channels)
+        Outputs:
+            maps: list of tensors, each tensor is of shape (batch_size, num_pixels) for the scalar maps, and (batch_size, num_pixels, 2) for the spin2 maps
+        """
 
+        channel_maps = inputs.unbind(dim=-1)
+
+        # stack spin2 maps into a single tensor
+        real_maps = channel_maps[:6]
+        imag_maps = channel_maps[6:12]
+        scalar_maps = channel_maps[12:18]
+        spin2_maps = [torch.stack([r.unsqueeze(1), i.unsqueeze(1)], dim=1) for r, i in zip(real_maps, imag_maps)] # shape (batch_size, 2, num_pixels)
+ 
+        # combine into a single list
+        maps = spin2_maps + scalar_maps
+
+        return maps
 
     

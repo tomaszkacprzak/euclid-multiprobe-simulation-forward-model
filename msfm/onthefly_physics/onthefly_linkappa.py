@@ -255,6 +255,20 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
 
         return inputs, targets
 
+    def unstack_batch_channels(self, inputs):
+        """
+        Unstack the channels of the input tensor into a list of maps.
+        Inputs: 
+            inputs: tensor of shape (batch_size, num_pixels, num_channels)
+        Outputs:
+            maps: list of tensors, each tensor is of shape (batch_size, num_pixels).
+        """
+
+        # all maps are scalar, simple unbind is enough
+        channel_maps = inputs.unbind(dim=-1)
+
+        return channel_maps
+
 
 
     
