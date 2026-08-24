@@ -43,7 +43,7 @@ def galaxy_density_to_count(ng_bar, dg, bg):
 
 class OntheflyPhysicsModelLinkappa(nn.Module):
 
-    def __init__(self, conf, scalers=False, seed=424344, num_samples_prior=1_000_000, device=None, nside=None, **kwargs):
+    def __init__(self, conf, scalers=False, seed=424344, num_samples_prior=1_000_000, device=None, nside=None, shape_noise_std=0.3, **kwargs):
 
         super().__init__()
 
@@ -54,7 +54,7 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         self.nside = nside
         self.set_params()
         self.onthefly_samples = self.get_onthefly_params(num_samples_prior)
-        self.shape_noise_std = 0.3
+        self.shape_noise_std = shape_noise_std
         self.num_gal_wl = torch.from_numpy(np.array(self.conf["survey"]["WL"]["n_gal"])).to(self.device)
         self.num_gal_gc = torch.from_numpy(np.array(self.conf["survey"]["GC"]["n_gal"])).to(self.device)
         self.pixel_area = hp.nside2pixarea(self.nside, degrees=True)
@@ -67,7 +67,7 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         if self.scalers:
             self.set_scalers()
         LOGGER.info(f"Created physics model Linear, num_channels={self.num_channels}, num_targets={self.num_targets}, apply_scalers={self.scalers}, shape_noise_std={self.shape_noise_std}")
-        
+                
 
     def set_scalers(self):
 
@@ -268,6 +268,34 @@ class OntheflyPhysicsModelLinkappa(nn.Module):
         channel_maps = inputs.unbind(dim=-1)
 
         return channel_maps
+
+
+
+    def prepare_weights(self, channel_maps):
+
+        weight_maps = []
+
+        # source clustering maps create weight_maps for shear maps
+        for i in range(6):
+            weight_map = channel_maps[i+6]
+            weight_maps.append(weight_map)
+
+        for i in range(6,len(channel_maps)+1):
+            weight_maps.append(None)
+
+        return tuple(weight_maps)
+
+
+    def preprocess_for_correlations(self, channel_maps):
+
+        prep_maps = []
+        for i in range(len(channel_maps)):
+            select = channel_maps[i] != 0
+            mean_map = channel_maps[i][select].mean()
+            delta = channel_maps[i] / mean_map - 1
+            prep_maps.append(delta)
+
+        return tuple(prep_maps)
 
 
 

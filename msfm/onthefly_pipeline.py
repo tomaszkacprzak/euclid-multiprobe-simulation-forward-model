@@ -22,13 +22,14 @@ class OntheflyPipeline():
     """
     Sets up a dataset for the onthefly cosmologies.
     """
-    def __init__(self, webds_pattern, batch_size, physics_model, smoother=None, downsampler=None, device="cuda", validation=False, num_workers=1):
+    def __init__(self, webds_pattern, batch_size, physics_model, smoother=None, downsampler=None, device="cuda", validation=False, num_workers=1, seed=None):
 
         self.physics_model = physics_model
         self.smoother = smoother
         self.downsampler = downsampler
         self.device = device
         self.batch_size = batch_size
+        self.seed = seed
         
         # get webdataset dataset
         list_files = sorted(glob.glob(webds_pattern))
@@ -47,6 +48,7 @@ class OntheflyPipeline():
             webdataset.WebDataset(
                 list_files, 
                 shardshuffle=1000,
+                seed = self.seed,
                 nodesplitter=webdataset.split_by_node,
                 workersplitter=webdataset.split_by_worker,
             )
@@ -74,7 +76,7 @@ class OntheflyPipeline():
 
 
         # test and get the number of pixels
-        for inputs, targets in self.__iter__():
+        for inputs, indices, targets in self.__iter__():
             
             self.num_pixels = inputs.shape[1]
             self.num_channels = inputs.shape[2]
