@@ -63,8 +63,13 @@ dev = [
 [project.urls]
 Repository = "https://github.com/des-science/multiprobe-simulation-forward-model"
 
+[project.scripts]
+msfm = "msfm.cli:main"
+
 [tool.setuptools]
-packages = ["msfm"]
+
+[tool.setuptools.packages.find]
+include = ["msfm*"]
 
 [tool.setuptools.package-data]
 msfm = ["*.yaml", "*.yml"]
@@ -78,5 +83,4 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
-
 
